@@ -126,12 +126,16 @@
       if (token) localStorage.setItem("gh_token", token);
     }
 
-    const headers = {
+    // ワークフロー起動用ヘッダー（認証が必要）
+    const authHeaders = {
       "Authorization": `Bearer ${token}`,
       "Accept": "application/vnd.github+json"
     };
+    // ステータス確認用ヘッダー（公開リポジトリなので認証不要）
+    const readHeaders = { "Accept": "application/vnd.github+json" };
 
     let pollTimer = null;
+    let triggeredAt = null; // ボタンを押した時刻
 
     async function triggerUpdate() {
       if (!token) {
@@ -146,12 +150,13 @@
       setStep("ジョブを開始しています...");
       show("statusRunning");
       document.getElementById("noteText").style.display = "none";
+      triggeredAt = new Date();
 
       try {
         // ワークフローをトリガー
         const res = await fetch(
           `https://api.github.com/repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW}/dispatches`,
-          { method: "POST", headers, body: JSON.stringify({ ref: "main" }) }
+          { method: "POST", headers: authHeaders, body: JSON.stringify({ ref: "main" }) }
         );
         if (res.status !== 204) {
           const d = await res.json().catch(() => ({}));
@@ -161,7 +166,7 @@
 
         // 少し待ってからポーリング開始（ジョブが登録されるまで待つ）
         setStep("実行準備中...");
-        await sleep(4000);
+        await sleep(5000);
         pollStatus();
 
       } catch (e) {
@@ -170,14 +175,24 @@
     }
 
     async function pollStatus() {
+      // タイムアウト: 10分経っても完了しなければエラー表示
+      if (triggeredAt && (new Date() - triggeredAt) > 10 * 60 * 1000) {
+        showError("タイムアウトしました。GitHubで確認してください。\nhttps://github.com/" + OWNER + "/" + REPO + "/actions");
+        return;
+      }
+
       try {
-        // 最新の workflow run を取得
+        // 最新の workflow run を認証なしで取得（公開リポジトリ）
         const res = await fetch(
-          `https://api.github.com/repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW}/runs?per_page=1`,
-          { headers }
+          `https://api.github.com/repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW}/runs?per_page=5`,
+          { headers: readHeaders }
         );
         const data = await res.json();
-        const run = data.workflow_runs?.[0];
+
+        // ボタンを押した時刻より後に作成されたrunを探す
+        const run = (data.workflow_runs || []).find(r => {
+          return triggeredAt ? new Date(r.created_at) >= new Date(triggeredAt - 10000) : true;
+        }) || data.workflow_runs?.[0];
 
         if (!run) {
           setStep("実行待機中...");

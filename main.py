@@ -72,34 +72,31 @@ def parse_time_cell(cell_value):
         # 末尾 2 桁が分、それ以前が時
         return int(raw[:-2]), int(raw[-2:])
 
-    # パターン: START-END上  または  START-END*OVERTIME
-    m = re.match(r"^(\d{2,4})-(\d{2,4})[上]?(?:\*(\d{1,4}))?$", s)
+    # パターン: START-END上 または START-END*OVERTIME（末尾に送迎などの注記も許容）
+    m = re.match(r"^(\d{2,4})-(\d{2,4})[上]?(?:\*(\d{1,4}))?", s)
     if m:
         sh, sm = raw_to_hhmm(m.group(1))
 
         if m.group(3):
-            # *NNN 形式の終了時間（例: *130 → 01:30 → 25:30, *1800 → 18:00）
+            # *NNN 形式の終了時間（例: *130 → 25:30, *1800 → 18:00）
             overtime_raw = m.group(3).zfill(4)
             eh, em = raw_to_hhmm(overtime_raw)
             # 深夜帯（6時未満）は Venrey の 25時表記に変換（01:30 → 25:30）
             if eh < 6:
                 eh += 24
         else:
-            # END 数字がそのまま使われる場合（例: 25上 → 25:00、14上 → 14:00）
+            # END 数字がそのまま使われる場合（例: 25上 → 25:00）
             eh, em = raw_to_hhmm(m.group(2))
-            # 24以上はそのまま維持（例: 25 → "25:00"）
 
-        # 開始時間は基本的に24時未満なのでそのまま
+        # 開始時間は基本的に24時未満
         if sh >= 24:
             sh -= 24
 
         return f"{sh:02d}:{sm:02d}", f"{eh:02d}:{em:02d}"
 
-    # ハイフンなし数字のみのセル（例: "1215", "123020"）→ 休み
-    if re.match(r"^\d+[上]?$", s):
-        return "休み"
-
-    return None
+    # ハイフンなし = 休み（数字を含むがハイフンのないセルはすべて休みとして扱う）
+    # 例: "1215", "123020", "1216上", "ロビー確認1120上" など
+    return "休み"
 
 
 def load_schedule():

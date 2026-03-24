@@ -142,8 +142,10 @@ def load_schedule():
         name = str(df.iloc[row_idx, 0]).strip()
         if not name or name == "nan":
             continue
-        # スペースを除去してVenrey管理画面の名前と合わせる
+        # スペースと末尾の数字を除去してVenrey管理画面の名前と合わせる
+        # 例: "桜餅 ねる 121" → "桜餅ねる"
         name = name.replace(" ", "").replace("\u3000", "")
+        name = re.sub(r'\d+$', '', name)
         schedule[name] = {}
         for col_idx, d in date_map.items():
             parsed = parse_time_cell(df.iloc[row_idx, col_idx])
@@ -355,67 +357,55 @@ def main():
         except PlaywrightTimeout:
             pass
 
-        # ── ページネーションを含む全スタッフを更新 ──
+        # pager2 の表示人数セレクトを 400 に変更して全スタッフを 1 ページに表示
+        try:
+            page.locator("pager2 select").select_option(value="400")
+            page.wait_for_load_state("networkidle", timeout=15000)
+            print("表示人数を 400 人に変更しました")
+        except PlaywrightTimeout:
+            print("表示人数の変更がタイムアウトしました（続行します）")
+        except Exception as e:
+            print(f"表示人数の変更に失敗しました: {e}（続行します）")
+
+        # ── 全スタッフを一括更新 ──
         updated = 0
         failed = 0
-        skipped = 0
-        page_num = 1
 
-        while True:
-            print(f"\n--- ページ {page_num} ---")
+        # スタッフ名 → data-id マッピングを取得
+        staff_id_map = get_staff_id_map(page)
+        print(f"\n管理画面のスタッフ数: {len(staff_id_map)} 人")
+        print("  [シート側の名前]:", list(this_week.keys())[:5])
+        print("  [管理画面の名前]:", list(staff_id_map.keys())[:5])
 
-            # 現在ページのスタッフ名 → data-id マッピングを取得
-            staff_id_map = get_staff_id_map(page)
-            print(f"  このページのスタッフ数: {len(staff_id_map)} 人")
+        for staff_name, date_times in this_week.items():
+            if staff_name not in staff_id_map:
+                # 名前が一致しない場合はスキップ（名前の表記ゆれが原因の可能性）
+                print(f"  スキップ（管理画面に見つかりません）: {staff_name}")
+                continue
 
-            # デバッグ: 名前の一致確認（初回のみ）
-            if page_num == 1:
-                print("  [シート側の名前]:", list(this_week.keys())[:5])
-                print("  [管理画面の名前]:", list(staff_id_map.keys())[:5])
+            data_id = staff_id_map[staff_name]
 
-            for staff_name, date_times in this_week.items():
-                if staff_name not in staff_id_map:
-                    continue  # このページにいないスタッフはスキップ
+            for target_date, shift in sorted(date_times.items()):
+                if not (week_start <= target_date <= week_end):
+                    continue
 
-                data_id = staff_id_map[staff_name]
-
-                for target_date, shift in sorted(date_times.items()):
-                    if not (week_start <= target_date <= week_end):
-                        continue
-
-                    # shift は ("開始", "終了") または "休み"
-                    if shift == "休み":
-                        label = "休み"
-                        start, end = "休み", ""
-                    else:
-                        start, end = shift
-                        label = f"{start}〜{end}"
-
-                    print(f"  更新: {staff_name} / {target_date.strftime('%m/%d')} {label}")
-                    success = update_cell(page, data_id, target_date, start, end)
-
-                    if success:
-                        updated += 1
-                        print("    → 完了")
-                    else:
-                        failed += 1
-                        print("    → 失敗（スキップ）")
-
-            # 次ページへ移動
-            try:
-                next_btn = page.locator(
-                    'button[aria-label*="next"], '
-                    'a[aria-label*="next"], '
-                    '[class*="pagination"] button:last-child'
-                ).first
-                if next_btn.is_visible(timeout=2000) and next_btn.is_enabled():
-                    next_btn.click()
-                    page.wait_for_load_state("networkidle", timeout=10000)
-                    page_num += 1
+                # shift は ("開始", "終了") または "休み"
+                if shift == "休み":
+                    label = "休み"
+                    start, end = "休み", ""
                 else:
-                    break
-            except PlaywrightTimeout:
-                break
+                    start, end = shift
+                    label = f"{start}〜{end}"
+
+                print(f"  更新: {staff_name} / {target_date.strftime('%m/%d')} {label}")
+                success = update_cell(page, data_id, target_date, start, end)
+
+                if success:
+                    updated += 1
+                    print("    → 完了")
+                else:
+                    failed += 1
+                    print("    → 失敗（スキップ）")
 
         # ── 完了報告 ──
         print(f"\n{'=' * 40}")

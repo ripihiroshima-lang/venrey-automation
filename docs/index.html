@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Venrey スケジュール更新</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", sans-serif;
+      background: #f0f4f8;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+    .card {
+      background: white;
+      border-radius: 16px;
+      padding: 40px 32px;
+      width: 90%;
+      max-width: 420px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.10);
+      text-align: center;
+    }
+    h1 { font-size: 20px; color: #1a202c; margin-bottom: 8px; }
+    .subtitle { font-size: 13px; color: #718096; margin-bottom: 32px; }
+    .btn {
+      display: inline-block;
+      width: 100%;
+      padding: 16px;
+      font-size: 17px;
+      font-weight: bold;
+      color: white;
+      background: #4299e1;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .btn:hover { background: #3182ce; }
+    .btn:disabled { background: #a0aec0; cursor: not-allowed; }
+    .status {
+      margin-top: 20px;
+      font-size: 14px;
+      color: #4a5568;
+      min-height: 20px;
+    }
+    .status.success { color: #38a169; }
+    .status.error   { color: #e53e3e; }
+    .spinner {
+      display: inline-block;
+      width: 16px; height: 16px;
+      border: 2px solid #cbd5e0;
+      border-top-color: #4299e1;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .note { font-size: 12px; color: #a0aec0; margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Venrey スケジュール更新</h1>
+    <p class="subtitle">スプレッドシートから今週のシフトを自動入力します</p>
+
+    <button class="btn" id="runBtn" onclick="triggerUpdate()">
+      今週のスケジュールを更新する
+    </button>
+
+    <div class="status" id="status"></div>
+    <p class="note">実行後、反映まで約2〜3分かかります</p>
+  </div>
+
+  <script>
+    // GitHub リポジトリ情報
+    const OWNER = "telarialtd-create";
+    const REPO  = "venrey-automation";
+    const WORKFLOW = "update_schedule.yml";
+
+    // GitHub Personal Access Token（ページ読み込み時に一度だけ入力）
+    let token = localStorage.getItem("gh_token");
+    if (!token) {
+      token = prompt("GitHubトークンを入力してください（初回のみ）:");
+      if (token) localStorage.setItem("gh_token", token);
+    }
+
+    async function triggerUpdate() {
+      if (!token) {
+        setStatus("error", "トークンが設定されていません。ページを再読み込みしてください。");
+        return;
+      }
+
+      const btn = document.getElementById("runBtn");
+      btn.disabled = true;
+      setStatus("loading", "実行リクエストを送信中...");
+
+      try {
+        const res = await fetch(
+          `https://api.github.com/repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW}/dispatches`,
+          {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${token}`,
+              "Accept": "application/vnd.github+json",
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ ref: "main" })
+          }
+        );
+
+        if (res.status === 204) {
+          setStatus("success", "✅ 更新を開始しました！約2〜3分後に反映されます。");
+        } else {
+          const data = await res.json().catch(() => ({}));
+          setStatus("error", `エラーが発生しました (${res.status}): ${data.message || ""}`);
+        }
+      } catch (e) {
+        setStatus("error", "通信エラーが発生しました。インターネット接続を確認してください。");
+      } finally {
+        setTimeout(() => { btn.disabled = false; }, 10000);
+      }
+    }
+
+    function setStatus(type, msg) {
+      const el = document.getElementById("status");
+      el.className = "status " + type;
+      el.innerHTML = type === "loading"
+        ? `<span class="spinner"></span>${msg}`
+        : msg;
+    }
+  </script>
+</body>
+</html>

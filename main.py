@@ -95,6 +95,10 @@ def parse_time_cell(cell_value):
 
         return f"{sh:02d}:{sm:02d}", f"{eh:02d}:{em:02d}"
 
+    # ハイフンなし数字のみのセル（例: "1215", "123020"）→ 休み
+    if re.match(r"^\d+[上]?$", s):
+        return "休み"
+
     return None
 
 
@@ -199,6 +203,28 @@ def get_staff_id_map(page):
     return result
 
 
+def set_status_to_holiday(schbox_locator):
+    """
+    schBox のステータスを「休み」(off) に設定する。
+    すでに off の場合は何もしない。
+    pend（未設定）→ on（出勤）→ off（休み）の順でサイクルすると想定。
+    """
+    try:
+        cls = schbox_locator.get_attribute("class", timeout=2000)
+        if cls and "off" in cls:
+            return  # すでに休み
+        btn = schbox_locator.locator(".schBox_states")
+        # 最大3回クリックして off になるまで試みる
+        for _ in range(3):
+            btn.click(timeout=3000)
+            time.sleep(0.4)
+            cls = schbox_locator.get_attribute("class", timeout=2000)
+            if cls and "off" in cls:
+                break
+    except PlaywrightTimeout:
+        pass
+
+
 def set_status_to_working(page, schbox_locator):
     """
     schBox のステータスを「出勤」に設定する。
@@ -241,7 +267,13 @@ def update_cell(page, data_id, target_date, start_time, end_time):
         schbox.scroll_into_view_if_needed(timeout=3000)
         time.sleep(0.2)
 
-        # ステータスを「出勤」に設定
+        # 休みの場合はステータスを「休み」に設定して終了
+        if start_time == "休み":
+            set_status_to_holiday(schbox)
+            time.sleep(0.2)
+            return True
+
+        # 出勤の場合: ステータスを「出勤」に設定して時間を入力
         set_status_to_working(page, schbox)
 
         # 開始時間の入力（data-role 属性のない 1 つ目の schBox_inputTime）
@@ -350,11 +382,19 @@ def main():
 
                 data_id = staff_id_map[staff_name]
 
-                for target_date, (start, end) in sorted(date_times.items()):
+                for target_date, shift in sorted(date_times.items()):
                     if not (week_start <= target_date <= week_end):
                         continue
 
-                    print(f"  更新: {staff_name} / {target_date.strftime('%m/%d')} {start}〜{end}")
+                    # shift は ("開始", "終了") または "休み"
+                    if shift == "休み":
+                        label = "休み"
+                        start, end = "休み", ""
+                    else:
+                        start, end = shift
+                        label = f"{start}〜{end}"
+
+                    print(f"  更新: {staff_name} / {target_date.strftime('%m/%d')} {label}")
                     success = update_cell(page, data_id, target_date, start, end)
 
                     if success:

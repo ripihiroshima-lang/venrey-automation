@@ -227,10 +227,14 @@ def load_schedule():
         print(f"  来月シート「{next_sheet}」も検出 → 内容を確認します")
         date_map_next = _build_date_map(df_next, next_year, next_month)
         next_schedules = _parse_staff_rows(df_next, date_map_next)
-        next_total = sum(sum(len(v) for v in s.values()) for s in next_schedules)
+        # 「休み」は除外して実際の出勤シフトのみカウント
+        next_total = sum(
+            sum(1 for shift in dates.values() if shift != "休み")
+            for s in next_schedules for dates in s.values()
+        )
 
         if next_total > 0:
-            # 来月シートにデータあり → 当月分のみ + 来月シートを使う
+            # 来月シートに実際の出勤データあり → 当月分のみ + 来月シートを使う
             print(f"  来月シートにデータあり（{next_total}件） → 両方を読み込みます")
             date_map_base = _build_date_map(df_base, base_year, base_month)
             date_map_base = {c: d for c, d in date_map_base.items() if d.month == base_month}
@@ -279,18 +283,54 @@ def get_staff_id_map(page):
     result = page.evaluate("""
         () => {
             const map = {};
-            // listGirl_name を含む label[for] 要素を探す
-            const labels = document.querySelectorAll('label[for]');
-            for (const label of labels) {
+
+            // 方法1: schBox の data-id から逆引き（最も確実）
+            const schBoxIds = [...new Set(
+                [...document.querySelectorAll('.schBox[data-id]')]
+                    .map(el => el.getAttribute('data-id'))
+            )];
+            for (const id of schBoxIds) {
+                const label = document.querySelector(`label[for="${id}"]`);
+                if (label) {
+                    const nameEl = label.querySelector('.listGirl_name');
+                    if (nameEl) {
+                        const name = nameEl.textContent.trim();
+                        if (name) { map[name] = id; continue; }
+                    }
+                    // listGirl_name がなければ schBox の親をたどって名前を探す
+                    const schBox = document.querySelector(`.schBox[data-id="${id}"]`);
+                    if (schBox) {
+                        let el = schBox.parentElement;
+                        while (el && el !== document.body) {
+                            const nameEl2 = el.querySelector('.listGirl_name');
+                            if (nameEl2) { map[nameEl2.textContent.trim()] = id; break; }
+                            el = el.parentElement;
+                        }
+                    }
+                } else {
+                    // label[for] がない場合は schBox の親から名前を探す
+                    const schBox = document.querySelector(`.schBox[data-id="${id}"]`);
+                    if (schBox) {
+                        let el = schBox.parentElement;
+                        while (el && el !== document.body) {
+                            const nameEl2 = el.querySelector('.listGirl_name');
+                            if (nameEl2) { map[nameEl2.textContent.trim()] = id; break; }
+                            el = el.parentElement;
+                        }
+                    }
+                }
+            }
+
+            // 方法2: label[for] からも追加（方法1で見つからなかった分を補完）
+            document.querySelectorAll('label[for]').forEach(label => {
                 const nameEl = label.querySelector('.listGirl_name');
                 if (nameEl) {
                     const name = nameEl.textContent.trim();
                     const id = label.getAttribute('for');
-                    if (name && id) {
-                        map[name] = id;
-                    }
+                    if (name && id && !map[name]) map[name] = id;
                 }
-            }
+            });
+
             return map;
         }
     """)
@@ -485,13 +525,18 @@ def main():
             except PlaywrightTimeout:
                 pass
 
-            # pager2 の表示人数セレクトを 400 に変更して全スタッフを 1 ページに表示
+            # 表示人数セレクトを最大値に変更して全スタッフを 1 ページに表示
             try:
-                page.locator("pager2 select").first.select_option(value="400")
-                page.wait_for_load_state("networkidle", timeout=15000)
-                print("表示人数を 400 人に変更しました")
-            except PlaywrightTimeout:
-                print("表示人数の変更がタイムアウトしました（続行します）")
+                sel = page.locator("select").filter(has_text=re.compile(r'\d{2,3}人?$'))
+                if sel.count() > 0:
+                    # 選択肢の最大値を選ぶ
+                    options = sel.first.evaluate(
+                        "el => [...el.options].map(o => ({value: o.value, text: o.text}))"
+                    )
+                    max_opt = max(options, key=lambda o: int(re.search(r'\d+', o['value'] or o['text']).group()) if re.search(r'\d+', o['value'] or o['text']) else 0)
+                    sel.first.select_option(value=max_opt['value'])
+                    page.wait_for_load_state("networkidle", timeout=15000)
+                    print(f"表示人数を {max_opt['text']} に変更しました")
             except Exception as e:
                 print(f"表示人数の変更に失敗しました: {e}（続行します）")
 

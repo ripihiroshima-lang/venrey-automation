@@ -111,70 +111,120 @@ def parse_time_cell(cell_value):
     return "休み"
 
 
-def load_schedule():
-    """
-    Google Sheets の CSV エクスポートからスケジュールを読み込む。
-
-    Returns:
-        {スタッフ名(str): {日付(date): (開始時間, 終了時間)}}
-    """
-    print("スプレッドシートを読み込み中...")
+def _fetch_sheet_df(sheet_name):
+    """指定シート名の CSV を取得して DataFrame を返す。取得失敗時は None。"""
+    url = (
+        f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}"
+        f"/gviz/tq?tqx=out:csv&sheet={sheet_name}"
+    )
     try:
-        resp = requests.get(SHEET_CSV_URL, timeout=15)
+        resp = requests.get(url, timeout=15)
         resp.raise_for_status()
-        df = pd.read_csv(io.StringIO(resp.content.decode("utf-8")), header=None, dtype=str)
-    except Exception as e:
-        print(f"エラー: スプレッドシートの取得に失敗しました: {e}")
-        print("スプレッドシートを「リンクを知っている全員が閲覧可」に設定してください。")
-        sys.exit(1)
+        return pd.read_csv(io.StringIO(resp.content.decode("utf-8")), header=None, dtype=str)
+    except Exception:
+        return None
 
-    # 対象年月を実行時に自動取得
-    today = datetime.now()
-    year, month = today.year, today.month
 
-    # スプレッドシート構造:
-    #   Row 0: "3月😊" | "" | "" | "1" | "2" | ... | "31"   ← 日付番号
-    #   Row 1: 名前ヘッダ | "確認日" | "出勤日数" | "日" | "月" | ...
-    #   Row 2+: スタッフ名 | 確認日 | 出勤日数 | シフト時間 | ...
-
-    # 日付カラムマッピング: {col_index: date}
+def _build_date_map(df, base_year, base_month):
+    """
+    1行目の数値セルから {col_index: date} マッピングを作る。
+    日付番号がリセット（減少）したら翌月に繰り上げる。
+    これにより同一シート内の「来月プレビュー列」も正しく翌月日付として扱われる。
+    """
     date_map = {}
+    cur_year, cur_month = base_year, base_month
+    prev_day = 0
     for col_idx in range(3, df.shape[1]):
         val = df.iloc[0, col_idx]
-        if pd.notna(val) and str(val).strip().isdigit():
-            try:
-                day = int(str(val).strip())
-                date_map[col_idx] = date(year, month, day)
-            except ValueError:
-                pass
+        if not (pd.notna(val) and str(val).strip().isdigit()):
+            continue
+        day = int(str(val).strip())
+        if day < prev_day:  # 日付がリセット → 翌月
+            if cur_month == 12:
+                cur_year, cur_month = cur_year + 1, 1
+            else:
+                cur_month += 1
+        try:
+            date_map[col_idx] = date(cur_year, cur_month, day)
+        except ValueError:
+            pass
+        prev_day = day
+    return date_map
 
-    # スタッフデータ読み込み（Row 2 以降）
-    # STORE_SEPARATOR 行を境に店舗ごとに分ける
-    schedules = [{}, {}]  # [店舗1, 店舗2]
+
+def _parse_staff_rows(df, date_map):
+    """スタッフ行をパースして [{名前: {日付: シフト}}, ...] を返す。"""
+    schedules = [{}, {}]
     store_idx = 0
-
     for row_idx in range(2, df.shape[0]):
         raw_name = str(df.iloc[row_idx, 0]).strip()
         if not raw_name or raw_name == "nan":
             continue
-
-        # 店舗区切り行を検出したら次の店舗へ切り替え
         if STORE_SEPARATOR in raw_name:
             store_idx = min(store_idx + 1, len(schedules) - 1)
             continue
-
-        # スペースと末尾の数字を除去してVenrey管理画面の名前と合わせる
-        # 例: "桜餅 ねる 121" → "桜餅ねる"
         name = raw_name.replace(" ", "").replace("\u3000", "")
         name = re.sub(r'\d+$', '', name)
         if not name:
             continue
-
-        schedules[store_idx][name] = {}
+        schedules[store_idx].setdefault(name, {})
         for col_idx, d in date_map.items():
             parsed = parse_time_cell(df.iloc[row_idx, col_idx])
             if parsed:
                 schedules[store_idx][name][d] = parsed
+    return schedules
+
+
+def load_schedule():
+    """
+    Google Sheets からスケジュールを読み込む。
+
+    ・来月シートが存在すれば来月分はそちらを参照
+    ・来月シートが未作成の場合は今月シートのAJ列以降（来月プレビュー）を参照
+
+    Returns:
+        [{スタッフ名: {日付: シフト}}, ...]  店舗ごとのリスト
+    """
+    print("スプレッドシートを読み込み中...")
+
+    today = datetime.now()
+    year, month = today.year, today.month
+    next_year  = year if month < 12 else year + 1
+    next_month = month + 1 if month < 12 else 1
+
+    this_sheet = f"{year}年{month}月"
+    next_sheet = f"{next_year}年{next_month}月"
+
+    # 今月シートを取得（必須）
+    df_this = _fetch_sheet_df(this_sheet)
+    if df_this is None:
+        print(f"エラー: 「{this_sheet}」シートの取得に失敗しました。")
+        print("スプレッドシートを「リンクを知っている全員が閲覧可」に設定してください。")
+        sys.exit(1)
+
+    # 来月シートを取得（任意）
+    df_next = _fetch_sheet_df(next_sheet)
+
+    if df_next is not None:
+        # 来月シートが存在 → 今月シートは当月分のみ、来月シートは翌月分のみ読む
+        print(f"  今月シート「{this_sheet}」＋来月シート「{next_sheet}」を読み込みます")
+        date_map_this = _build_date_map(df_this, year, month)
+        # 今月分の日付のみに絞る
+        date_map_this = {c: d for c, d in date_map_this.items() if d.month == month}
+        date_map_next = _build_date_map(df_next, next_year, next_month)
+
+        schedules = _parse_staff_rows(df_this, date_map_this)
+        next_schedules = _parse_staff_rows(df_next, date_map_next)
+
+        # 来月データをマージ（来月シート優先）
+        for i in range(2):
+            for name, dates in next_schedules[i].items():
+                schedules[i].setdefault(name, {}).update(dates)
+    else:
+        # 来月シート未作成 → 今月シートのAJ列以降（来月プレビュー）も含めて読む
+        print(f"  今月シート「{this_sheet}」のみ読み込み（来月プレビュー列も参照）")
+        date_map = _build_date_map(df_this, year, month)
+        schedules = _parse_staff_rows(df_this, date_map)
 
     for i, s in enumerate(schedules):
         total = sum(len(v) for v in s.values())

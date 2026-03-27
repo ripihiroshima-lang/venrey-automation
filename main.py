@@ -131,15 +131,27 @@ def _build_date_map(df, base_year, base_month):
     1行目の数値セルから {col_index: date} マッピングを作る。
     日付番号がリセット（減少）したら翌月に繰り上げる。
     これにより同一シート内の「来月プレビュー列」も正しく翌月日付として扱われる。
+    日付列は整数または小数（例: 1.0）でも検出する。
     """
+    # 診断：1行目の先頭40列の生値を表示
+    row0_sample = [str(df.iloc[0, i]) if i < df.shape[1] else "" for i in range(min(40, df.shape[1]))]
+    print(f"  [診断] 1行目(先頭40列): {row0_sample}")
+
     date_map = {}
     cur_year, cur_month = base_year, base_month
     prev_day = 0
     for col_idx in range(3, df.shape[1]):
         val = df.iloc[0, col_idx]
-        if not (pd.notna(val) and str(val).strip().isdigit()):
+        if not pd.notna(val):
             continue
-        day = int(str(val).strip())
+        s = str(val).strip()
+        # 整数・小数（1.0 など）どちらでも日付番号として扱う
+        try:
+            day = int(float(s))
+        except (ValueError, TypeError):
+            continue
+        if not (1 <= day <= 31):
+            continue
         if day < prev_day:  # 日付がリセット → 翌月
             if cur_month == 12:
                 cur_year, cur_month = cur_year + 1, 1
@@ -150,6 +162,7 @@ def _build_date_map(df, base_year, base_month):
         except ValueError:
             pass
         prev_day = day
+    print(f"  [診断] date_map: {len(date_map)} 列検出 (例: {dict(list(date_map.items())[:5])})")
     return date_map
 
 

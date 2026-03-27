@@ -133,10 +133,6 @@ def _build_date_map(df, base_year, base_month):
     これにより同一シート内の「来月プレビュー列」も正しく翌月日付として扱われる。
     日付列は整数または小数（例: 1.0）でも検出する。
     """
-    # 診断：1行目の先頭40列の生値を表示
-    row0_sample = [str(df.iloc[0, i]) if i < df.shape[1] else "" for i in range(min(40, df.shape[1]))]
-    print(f"  [診断] 1行目(先頭40列): {row0_sample}")
-
     date_map = {}
     cur_year, cur_month = base_year, base_month
     prev_day = 0
@@ -145,11 +141,11 @@ def _build_date_map(df, base_year, base_month):
         if not pd.notna(val):
             continue
         s = str(val).strip()
-        # 整数・小数（1.0 など）どちらでも日付番号として扱う
-        try:
-            day = int(float(s))
-        except (ValueError, TypeError):
+        # 「1 日」「31 火」など先頭の数字を抽出（曜日付き形式に対応）
+        m = re.match(r'^(\d+)', s)
+        if not m:
             continue
+        day = int(m.group(1))
         if not (1 <= day <= 31):
             continue
         if day < prev_day:  # 日付がリセット → 翌月
@@ -162,7 +158,6 @@ def _build_date_map(df, base_year, base_month):
         except ValueError:
             pass
         prev_day = day
-    print(f"  [診断] date_map: {len(date_map)} 列検出 (例: {dict(list(date_map.items())[:5])})")
     return date_map
 
 

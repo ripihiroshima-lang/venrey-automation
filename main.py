@@ -176,6 +176,7 @@ def _parse_staff_rows(df, date_map):
             continue
         name = raw_name.replace(" ", "").replace("\u3000", "")
         name = re.sub(r'\d+$', '', name)
+        name = re.sub(r'[A-Za-z]+$', '', name)  # 末尾のアルファベットタグ（F, SBなど）を除去
         if not name:
             continue
         # ふわもこSPA はSTORE2_STOP_AT の行の手前で読み込み停止

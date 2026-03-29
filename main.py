@@ -557,6 +557,22 @@ def main():
                     print(f"\n管理画面のスタッフ数: {len(staff_id_map)} 人")
                     print("  [シート側の名前]:", list(this_week.keys())[:5])
                     print("  [管理画面の名前]:", list(staff_id_map.keys())[:5])
+                    # ふわもこSPA（store_idx==1）の場合、ページ上の全name系クラスを調査
+                    if store_idx == 1:
+                        all_name_classes = page.evaluate("""
+                            () => {
+                                const els = document.querySelectorAll('[class*="name"]');
+                                const result = [];
+                                els.forEach(el => {
+                                    const cls = el.className;
+                                    const txt = el.textContent.trim();
+                                    if (txt && !result.find(r => r.cls === cls))
+                                        result.push({cls, example: txt});
+                                });
+                                return result.slice(0, 20);
+                            }
+                        """)
+                        print("  [DEBUG] ページ上のname系クラス:", all_name_classes)
 
                 still_pending = []
                 for (staff_name, target_date, shift) in pending:

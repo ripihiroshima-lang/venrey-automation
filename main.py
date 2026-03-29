@@ -34,6 +34,9 @@ STORES = [
 # スプレッドシートで店舗を区切るセル値（この行以降が次の店舗）
 STORE_SEPARATOR = "ふわもこSPA"
 
+# ふわもこSPA のスタッフ読み込みをこの名前の行の手前で停止する
+STORE2_STOP_AT = "たくま"
+
 # スプレッドシート ID（URL の /d/ と /edit の間の文字列）
 SPREADSHEET_ID = "10siqLe6B9A7uvNWgRUdHb462RqxCxkGEGMEKTPhY-S8"
 
@@ -175,6 +178,9 @@ def _parse_staff_rows(df, date_map):
         name = re.sub(r'\d+$', '', name)
         if not name:
             continue
+        # ふわもこSPA はSTORE2_STOP_AT の行の手前で読み込み停止
+        if store_idx == 1 and name.startswith(STORE2_STOP_AT):
+            break
         schedules[store_idx].setdefault(name, {})
         for col_idx, d in date_map.items():
             parsed = parse_time_cell(df.iloc[row_idx, col_idx])

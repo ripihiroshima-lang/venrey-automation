@@ -385,8 +385,8 @@ def push_message(to_id, image_url, range_str):
 
 
 def send_to_line(image_url, range_str):
-    """個人に送信（テスト用）"""
-    return push_message(LINE_USER_ID, image_url, range_str)
+    """グループに送信"""
+    return push_message(LINE_GROUP_ID, image_url, range_str)
 
 
 def main():

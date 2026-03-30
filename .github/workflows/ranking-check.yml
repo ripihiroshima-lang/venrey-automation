@@ -1,0 +1,21 @@
+name: ランキング確認（毎日3:05）
+
+on:
+  schedule:
+    - cron: '5 18 * * *'  # UTC 18:05 = JST 3:05
+  workflow_dispatch:       # 手動実行も可能
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: リポジトリをチェックアウト
+        uses: actions/checkout@v4
+
+      - name: Python セットアップ
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: スクリプト実行
+        run: python ranking_check.py

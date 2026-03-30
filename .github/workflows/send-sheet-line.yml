@@ -1,0 +1,30 @@
+name: シフト送信（毎日3:00）
+
+on:
+  schedule:
+    - cron: '0 18 * * *'  # UTC 18:00 = JST 3:00
+  workflow_dispatch:       # 手動実行も可能
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - name: リポジトリをチェックアウト
+        uses: actions/checkout@v4
+
+      - name: Python セットアップ
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 依存パッケージをインストール
+        run: pip install pymupdf Pillow numpy
+
+      - name: 認証情報を配置
+        run: |
+          mkdir -p ~/.config
+          echo '${{ secrets.GCP_OAUTH_KEYS }}' > ~/.config/gcp-oauth.keys.json
+          echo '${{ secrets.GDRIVE_CREDENTIALS }}' > ~/.config/gdrive-server-credentials.json
+
+      - name: スクリプト実行
+        run: python send_sheet_line.py

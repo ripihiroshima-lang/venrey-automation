@@ -1,8 +1,8 @@
-name: ランキング確認（毎日3:05）
+name: ランキング確認（毎日12:00）
 
 on:
   schedule:
-    - cron: '5 18 * * *'  # UTC 18:05 = JST 3:05
+    - cron: '0 3 * * *'  # UTC 3:00 = JST 12:00
   workflow_dispatch:       # 手動実行も可能
 
 jobs:

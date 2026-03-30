@@ -438,28 +438,24 @@ def update_cell(page, data_id, target_date, start_time, end_time):
             time.sleep(0.5)
 
         # 開始時間の入力
-        # fill() だけではAngularのchange検知が発火しないケースがあるため
-        # click → triple_click で全選択 → type で文字入力 してイベントを確実に発火させる
+        # click(click_count=3) で全選択してから fill() で入力
         start_input = schbox.locator("input.schBox_inputTime").first
-        start_input.click(timeout=3000)
+        start_input.click(click_count=3, timeout=3000)
         time.sleep(0.2)
-        start_input.triple_click(timeout=3000)
-        start_input.type(start_time)
+        start_input.fill(start_time)
         time.sleep(0.3)
 
         # 終了時間の入力
         end_input = schbox.locator('input[data-role="end-time"]')
         if end_input.count() > 0:
-            end_input.click(timeout=3000)
+            end_input.click(click_count=3, timeout=3000)
             time.sleep(0.2)
-            end_input.triple_click(timeout=3000)
-            end_input.type(end_time)
+            end_input.fill(end_time)
         else:
             end_input2 = schbox.locator("input.schBox_inputTime").nth(1)
-            end_input2.click(timeout=3000)
+            end_input2.click(click_count=3, timeout=3000)
             time.sleep(0.2)
-            end_input2.triple_click(timeout=3000)
-            end_input2.type(end_time)
+            end_input2.fill(end_time)
         time.sleep(0.3)
 
         # フォーカスを外して確定（Tab キー）
@@ -674,6 +670,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 

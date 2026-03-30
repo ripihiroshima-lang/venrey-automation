@@ -438,24 +438,28 @@ def update_cell(page, data_id, target_date, start_time, end_time):
             time.sleep(0.5)
 
         # 開始時間の入力
-        # click(click_count=3) で全選択してから fill() で入力
+        # fill() はAngularのchange検知を発火しないケースがあるため
+        # click → Ctrl+A で全選択 → keyboard.type() でキー入力してイベントを確実に発火させる
         start_input = schbox.locator("input.schBox_inputTime").first
-        start_input.click(click_count=3, timeout=3000)
-        time.sleep(0.2)
-        start_input.fill(start_time)
+        start_input.click(timeout=3000)
+        time.sleep(0.15)
+        page.keyboard.press("Control+a")
+        page.keyboard.type(start_time)
         time.sleep(0.3)
 
         # 終了時間の入力
         end_input = schbox.locator('input[data-role="end-time"]')
         if end_input.count() > 0:
-            end_input.click(click_count=3, timeout=3000)
-            time.sleep(0.2)
-            end_input.fill(end_time)
+            end_input.click(timeout=3000)
+            time.sleep(0.15)
+            page.keyboard.press("Control+a")
+            page.keyboard.type(end_time)
         else:
             end_input2 = schbox.locator("input.schBox_inputTime").nth(1)
-            end_input2.click(click_count=3, timeout=3000)
-            time.sleep(0.2)
-            end_input2.fill(end_time)
+            end_input2.click(timeout=3000)
+            time.sleep(0.15)
+            page.keyboard.press("Control+a")
+            page.keyboard.type(end_time)
         time.sleep(0.3)
 
         # フォーカスを外して確定（Tab キー）
@@ -670,6 +674,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 

@@ -418,6 +418,7 @@ def update_cell(page, data_id, target_date, start_time, end_time):
             return True
 
         # 出勤の場合: ステータスを「出勤」に設定して時間を入力
+        was_off = "off" in (schbox.get_attribute("class", timeout=2000) or "")
         set_status_to_working(page, schbox)
 
         # 状態変更の確認（offのままなら失敗）
@@ -425,35 +426,45 @@ def update_cell(page, data_id, target_date, start_time, end_time):
         if cls_after and "on" not in cls_after:
             print(f"    状態変更失敗 (class={cls_after})")
             return False
-        time.sleep(0.5)  # Angular の再レンダリング待ち
 
-        # 開始時間の入力（data-role 属性のない 1 つ目の schBox_inputTime）
+        # off→on の場合、Angularが時間入力フィールドをDOMに追加するまで待つ
+        if was_off:
+            try:
+                schbox.locator("input.schBox_inputTime").first.wait_for(state="visible", timeout=5000)
+            except PlaywrightTimeout:
+                pass
+            time.sleep(1.0)
+        else:
+            time.sleep(0.5)
+
+        # 開始時間の入力
+        # fill() だけではAngularのchange検知が発火しないケースがあるため
+        # click → triple_click で全選択 → type で文字入力 してイベントを確実に発火させる
         start_input = schbox.locator("input.schBox_inputTime").first
         start_input.click(timeout=3000)
         time.sleep(0.2)
-        page.keyboard.press("Control+a")
-        start_input.fill(start_time)
-        time.sleep(0.2)
+        start_input.triple_click(timeout=3000)
+        start_input.type(start_time)
+        time.sleep(0.3)
 
-        # 終了時間の入力（data-role="end-time" の input）
+        # 終了時間の入力
         end_input = schbox.locator('input[data-role="end-time"]')
         if end_input.count() > 0:
             end_input.click(timeout=3000)
             time.sleep(0.2)
-            page.keyboard.press("Control+a")
-            end_input.fill(end_time)
+            end_input.triple_click(timeout=3000)
+            end_input.type(end_time)
         else:
-            # data-role がない場合は 2 つ目の input を使う
             end_input2 = schbox.locator("input.schBox_inputTime").nth(1)
             end_input2.click(timeout=3000)
             time.sleep(0.2)
-            page.keyboard.press("Control+a")
-            end_input2.fill(end_time)
-        time.sleep(0.2)
+            end_input2.triple_click(timeout=3000)
+            end_input2.type(end_time)
+        time.sleep(0.3)
 
         # フォーカスを外して確定（Tab キー）
         page.keyboard.press("Tab")
-        time.sleep(0.3)
+        time.sleep(0.5)
         return True
 
     except PlaywrightTimeout:

@@ -279,14 +279,43 @@ def get_staff_id_map(page):
     """
     現在のページに表示されているスタッフ名 → data-id のマッピングを取得する。
 
-    位置ベースマッピング: DOM 順の .listGirl_name と .schBox[data-id] 最初出現順が一致する前提。
-    label[for] と schBox の data-id が異なる場合にも対応できる。
+    方法1（優先）: label[for] で名前とIDを直接紐付け（最も確実）
+    方法2（フォールバック）: .schBox の data-id 属性を名前要素の祖先/兄弟から探す
+    方法3（最終手段）: 位置ベース（DOM順が一致する前提）
     """
     result = page.evaluate("""
         () => {
             const map = {};
 
-            // 方法1: 位置ベース（名前の DOM 順 = schBox id の最初出現順 と仮定）
+            // 方法1: label[for] で名前と ID を直接紐付け（位置ずれが起きない）
+            document.querySelectorAll('label[for]').forEach(label => {
+                const nameEl = label.querySelector('.listGirl_name');
+                if (!nameEl) return;
+                const name = nameEl.textContent.trim();
+                const id = label.getAttribute('for');
+                if (name && id && !map[name]) map[name] = id;
+            });
+
+            if (Object.keys(map).length > 0) return map;
+
+            // 方法2: .listGirl_name の祖先または隣接要素から data-id を取得
+            document.querySelectorAll('.listGirl_name').forEach(nameEl => {
+                const name = nameEl.textContent.trim();
+                if (!name) return;
+                // 祖先に data-id があれば使う
+                let el = nameEl.parentElement;
+                while (el) {
+                    if (el.hasAttribute('data-id')) {
+                        if (!map[name]) map[name] = el.getAttribute('data-id');
+                        break;
+                    }
+                    el = el.parentElement;
+                }
+            });
+
+            if (Object.keys(map).length > 0) return map;
+
+            // 方法3: 位置ベース（最終手段 — 名前の DOM 順 = schBox id の最初出現順 と仮定）
             const nameEls = [...document.querySelectorAll('.listGirl_name')];
             const seen = new Set();
             const schBoxIds = [];
@@ -299,17 +328,6 @@ def get_staff_id_map(page):
             for (let i = 0; i < minLen; i++) {
                 const name = nameEls[i].textContent.trim();
                 if (name) map[name] = schBoxIds[i];
-            }
-
-            // 方法2: schBox が見つからない場合は label[for] でフォールバック
-            if (Object.keys(map).length === 0) {
-                document.querySelectorAll('label[for]').forEach(label => {
-                    const nameEl = label.querySelector('.listGirl_name');
-                    if (!nameEl) return;
-                    const name = nameEl.textContent.trim();
-                    const id = label.getAttribute('for');
-                    if (name && id && !map[name]) map[name] = id;
-                });
             }
 
             return map;
@@ -579,7 +597,9 @@ def main():
                 if screen == "今週":
                     print(f"\n管理画面のスタッフ数: {len(staff_id_map)} 人")
                     print("  [シート側の名前]:", list(this_week.keys())[:5])
-                    print("  [管理画面の名前]:", list(staff_id_map.keys())[:5])
+                    print("  [管理画面の名前 → data-id]:")
+                    for n, did in list(staff_id_map.items())[:10]:
+                        print(f"    {n} → {did}")
                 found_in_venrey.update(staff_id_map.keys())
 
                 still_pending = []
@@ -646,4 +666,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 

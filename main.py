@@ -422,8 +422,8 @@ def update_cell(page, data_id, target_date, start_time, end_time):
         set_status_to_working(page, schbox)
 
         # 状態変更の確認（offのままなら失敗）
-        cls_after = schbox.get_attribute("class", timeout=2000)
-        if cls_after and "on" not in cls_after:
+        cls_after = schbox.get_attribute("class", timeout=2000) or ""
+        if "on" not in cls_after:
             print(f"    状態変更失敗 (class={cls_after})")
             return False
 
@@ -433,33 +433,40 @@ def update_cell(page, data_id, target_date, start_time, end_time):
                 schbox.locator("input.schBox_inputTime").first.wait_for(state="visible", timeout=5000)
             except PlaywrightTimeout:
                 pass
-            time.sleep(1.0)
+            time.sleep(1.5)
         else:
-            time.sleep(0.5)
+            time.sleep(0.3)
 
-        # 開始時間の入力
-        # fill() はAngularのchange検知を発火しないケースがあるため
-        # click → Ctrl+A で全選択 → keyboard.type() でキー入力してイベントを確実に発火させる
+        # 時間をJavaScriptで直接セットしAngularのchange検知を発火させる
+        # keyboard.type()はコロンが特殊動作しAngularフィールドで誤動作するため使わない
+        def set_input_value(locator, value):
+            locator.evaluate("""(el, val) => {
+                // Angularのchange検知をトリガーするためネイティブsetterを使う
+                const setter = Object.getOwnPropertyDescriptor(
+                    window.HTMLInputElement.prototype, 'value').set;
+                setter.call(el, val);
+                el.dispatchEvent(new Event('input',  { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+            }""", value)
+
+        # 開始時間
         start_input = schbox.locator("input.schBox_inputTime").first
         start_input.click(timeout=3000)
         time.sleep(0.15)
-        page.keyboard.press("Control+a")
-        page.keyboard.type(start_time)
+        set_input_value(start_input, start_time)
         time.sleep(0.3)
 
-        # 終了時間の入力
+        # 終了時間
         end_input = schbox.locator('input[data-role="end-time"]')
         if end_input.count() > 0:
             end_input.click(timeout=3000)
             time.sleep(0.15)
-            page.keyboard.press("Control+a")
-            page.keyboard.type(end_time)
+            set_input_value(end_input, end_time)
         else:
             end_input2 = schbox.locator("input.schBox_inputTime").nth(1)
             end_input2.click(timeout=3000)
             time.sleep(0.15)
-            page.keyboard.press("Control+a")
-            page.keyboard.type(end_time)
+            set_input_value(end_input2, end_time)
         time.sleep(0.3)
 
         # フォーカスを外して確定（Tab キー）
@@ -674,6 +681,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 

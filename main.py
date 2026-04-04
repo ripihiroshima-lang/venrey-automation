@@ -520,7 +520,8 @@ def main():
                 print(f"{label_store}: 今週の出勤データがありません。スキップします。")
                 continue
 
-            page = browser.new_page()
+            context = browser.new_context()
+            page = context.new_page()
             page.set_viewport_size({"width": 1600, "height": 900})
 
             # ログイン
@@ -666,14 +667,14 @@ def main():
                 print("失敗したセルは手動で確認・入力してください。")
             print("=" * 40)
 
-            # Angular の保存リクエストが完了するまで待つ（page.close() でキャンセルされるのを防ぐ）
+            # Angular の保存リクエストが完了するまで待つ（context.close() でキャンセルされるのを防ぐ）
             try:
                 page.wait_for_load_state("networkidle", timeout=15000)
             except PlaywrightTimeout:
                 pass
             time.sleep(5)
 
-            page.close()
+            context.close()
 
         time.sleep(3)
         browser.close()

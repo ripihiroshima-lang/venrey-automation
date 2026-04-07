@@ -10,9 +10,13 @@ Venrey管理画面の週間スケジュールを自動更新する。
 """
 
 import io
+import json
+import os
 import re
 import sys
 import time
+import urllib.parse
+import urllib.request
 from datetime import datetime, date, timedelta
 
 import pandas as pd
@@ -114,17 +118,48 @@ def parse_time_cell(cell_value):
     return "休み"
 
 
-def _fetch_sheet_df(sheet_name):
-    """指定シート名の CSV を取得して DataFrame を返す。取得失敗時は None。"""
-    url = (
-        f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}"
-        f"/gviz/tq?tqx=out:csv&sheet={sheet_name}"
+def _get_access_token():
+    """GDrive OAuth認証情報からアクセストークンを取得（リフレッシュ）する。"""
+    oauth_path = os.path.expanduser("~/.config/gcp-oauth.keys.json")
+    creds_path = os.path.expanduser("~/.config/gdrive-server-credentials.json")
+    with open(oauth_path) as f:
+        oauth = json.load(f)
+    with open(creds_path) as f:
+        creds = json.load(f)
+    data = urllib.parse.urlencode({
+        "client_id": oauth["installed"]["client_id"],
+        "client_secret": oauth["installed"]["client_secret"],
+        "refresh_token": creds["refresh_token"],
+        "grant_type": "refresh_token",
+    }).encode()
+    req = urllib.request.Request(
+        "https://oauth2.googleapis.com/token", data=data, method="POST"
     )
+    with urllib.request.urlopen(req) as r:
+        return json.load(r)["access_token"]
+
+
+def _fetch_sheet_df(sheet_name):
+    """指定シート名の全行（隠し行含む）を Sheets API v4 で取得して DataFrame を返す。取得失敗時は None。"""
     try:
-        resp = requests.get(url, timeout=15)
-        resp.raise_for_status()
-        return pd.read_csv(io.StringIO(resp.content.decode("utf-8")), header=None, dtype=str)
-    except Exception:
+        access_token = _get_access_token()
+        encoded_range = urllib.parse.quote(sheet_name)
+        url = (
+            f"https://sheets.googleapis.com/v4/spreadsheets/{SPREADSHEET_ID}"
+            f"/values/{encoded_range}"
+        )
+        req = urllib.request.Request(url, headers={"Authorization": f"Bearer {access_token}"})
+        with urllib.request.urlopen(req) as r:
+            data = json.load(r)
+        rows = data.get("values", [])
+        if not rows:
+            return None
+        # 行ごとに列数を最大列数に揃えて DataFrame 化
+        max_cols = max(len(row) for row in rows)
+        padded = [row + [""] * (max_cols - len(row)) for row in rows]
+        return pd.DataFrame(padded, dtype=str)
+    except Exception as e:
+        print(f"シート取得エラー ({sheet_name}): {e}")
         return None
 
 

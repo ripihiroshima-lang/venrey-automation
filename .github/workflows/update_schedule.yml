@@ -2,6 +2,11 @@ name: Venrey スケジュール更新
 
 on:
   workflow_dispatch:
+    inputs:
+      selected_staff:
+        description: '更新するスタッフ（カンマ区切り。空欄=全員）'
+        required: false
+        default: ''
 
 jobs:
   update:
@@ -23,5 +28,10 @@ jobs:
           playwright install chromium --with-deps
 
       - name: スケジュールを更新
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+          SELECTED_STAFF: ${{ github.event.inputs.selected_staff }}
         run: python main.py
 

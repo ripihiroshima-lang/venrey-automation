@@ -119,24 +119,43 @@ def parse_time_cell(cell_value):
 
 
 def _get_access_token():
-    """GDrive OAuth認証情報からアクセストークンを取得（リフレッシュ）する。"""
-    oauth_path = os.path.expanduser("~/.config/gcp-oauth.keys.json")
-    creds_path = os.path.expanduser("~/.config/gdrive-server-credentials.json")
-    with open(oauth_path) as f:
-        oauth = json.load(f)
-    with open(creds_path) as f:
-        creds = json.load(f)
+    """GDrive OAuth認証情報からアクセストークンを取得（リフレッシュ）する。
+    環境変数（GitHub Actions）があればそちらを優先し、なければローカルファイルを使用。
+    """
+    client_id     = os.environ.get("GOOGLE_CLIENT_ID")
+    client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
+    refresh_token = os.environ.get("GOOGLE_REFRESH_TOKEN")
+
+    if not all([client_id, client_secret, refresh_token]):
+        oauth_path = os.path.expanduser("~/.config/gcp-oauth.keys.json")
+        creds_path = os.path.expanduser("~/.config/gdrive-server-credentials.json")
+        with open(oauth_path) as f:
+            oauth = json.load(f)
+        with open(creds_path) as f:
+            creds = json.load(f)
+        client_id     = oauth["installed"]["client_id"]
+        client_secret = oauth["installed"]["client_secret"]
+        refresh_token = creds["refresh_token"]
+
     data = urllib.parse.urlencode({
-        "client_id": oauth["installed"]["client_id"],
-        "client_secret": oauth["installed"]["client_secret"],
-        "refresh_token": creds["refresh_token"],
-        "grant_type": "refresh_token",
+        "client_id":     client_id,
+        "client_secret": client_secret,
+        "refresh_token": refresh_token,
+        "grant_type":    "refresh_token",
     }).encode()
     req = urllib.request.Request(
         "https://oauth2.googleapis.com/token", data=data, method="POST"
     )
     with urllib.request.urlopen(req) as r:
         return json.load(r)["access_token"]
+
+
+def _normalize_name(raw):
+    """スタッフ名を _parse_staff_rows と同じルールで正規化する。"""
+    name = raw.strip().replace(" ", "").replace("\u3000", "")
+    name = re.sub(r'\d+$', '', name)
+    name = re.sub(r'[A-Za-z]+$', '', name)
+    return name
 
 
 def _fetch_sheet_df(sheet_name):
@@ -522,6 +541,18 @@ def update_cell(page, data_id, target_date, start_time, end_time):
 def main():
     # ── Step 1: スプレッドシートを読み込む ──
     schedules = load_schedule()
+
+    # ── Step 1b: SELECTED_STAFF 環境変数で絞り込み（UIからの選択）──
+    selected_raw = os.environ.get("SELECTED_STAFF", "").strip()
+    if selected_raw:
+        selected_normalized = set(
+            _normalize_name(n) for n in selected_raw.split(",") if n.strip()
+        )
+        print(f"選択スタッフ絞り込み: {sorted(selected_normalized)}")
+        schedules = [
+            {k: v for k, v in sched.items() if k in selected_normalized}
+            for sched in schedules
+        ]
 
     # ── Step 2: 今週の日付範囲を特定 ──
     week_start, week_end = get_current_week_dates()

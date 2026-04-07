@@ -9,24 +9,97 @@
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", sans-serif;
       background: #f0f4f8;
-      display: flex;
-      justify-content: center;
-      align-items: center;
       min-height: 100vh;
+      padding: 24px 16px;
     }
     .card {
       background: white;
       border-radius: 16px;
-      padding: 40px 32px;
-      width: 90%;
-      max-width: 420px;
+      padding: 28px 24px;
+      width: 100%;
+      max-width: 480px;
+      margin: 0 auto;
       box-shadow: 0 4px 24px rgba(0,0,0,0.10);
-      text-align: center;
     }
-    h1 { font-size: 20px; color: #1a202c; margin-bottom: 8px; }
-    .subtitle { font-size: 13px; color: #718096; margin-bottom: 32px; }
-    .btn {
-      display: inline-block;
+    h1 { font-size: 20px; color: #1a202c; margin-bottom: 4px; }
+    .subtitle { font-size: 13px; color: #718096; margin-bottom: 20px; }
+
+    /* 全選択バー */
+    .select-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .select-bar input[type="text"] {
+      flex: 1;
+      padding: 8px 12px;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      font-size: 14px;
+      outline: none;
+    }
+    .select-bar input[type="text"]:focus { border-color: #4299e1; }
+    .btn-small {
+      padding: 7px 12px;
+      font-size: 13px;
+      font-weight: bold;
+      color: #4a5568;
+      background: #edf2f7;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .btn-small:hover { background: #e2e8f0; }
+
+    /* 店舗セクション */
+    .store-section { margin-bottom: 20px; }
+    .store-label {
+      font-size: 12px;
+      font-weight: bold;
+      color: #a0aec0;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 8px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    /* スタッフ行 */
+    .staff-list { display: flex; flex-direction: column; gap: 2px; }
+    .staff-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.12s;
+    }
+    .staff-item:hover { background: #f7fafc; }
+    .staff-item.checked { background: #ebf8ff; }
+    .staff-item input[type="checkbox"] {
+      width: 18px; height: 18px;
+      accent-color: #4299e1;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .staff-name { font-size: 15px; color: #2d3748; }
+    .staff-item.hidden-item { display: none; }
+
+    /* カウンター */
+    .counter {
+      font-size: 13px;
+      color: #718096;
+      margin-bottom: 16px;
+      text-align: right;
+    }
+    .counter span { font-weight: bold; color: #4299e1; }
+
+    /* 実行ボタン */
+    .btn-run {
+      display: block;
       width: 100%;
       padding: 16px;
       font-size: 17px;
@@ -38,65 +111,67 @@
       cursor: pointer;
       transition: background 0.2s;
     }
-    .btn:hover:not(:disabled) { background: #3182ce; }
-    .btn:disabled { background: #a0aec0; cursor: not-allowed; }
+    .btn-run:hover:not(:disabled) { background: #3182ce; }
+    .btn-run:disabled { background: #a0aec0; cursor: not-allowed; }
 
     /* ステータスボックス */
     .status-box {
-      margin-top: 24px;
-      padding: 16px;
+      margin-top: 20px;
+      padding: 14px 16px;
       border-radius: 10px;
-      font-size: 15px;
+      font-size: 14px;
       font-weight: bold;
+      white-space: pre-wrap;
       display: none;
     }
-    .status-box.running {
-      display: block;
-      background: #ebf8ff;
-      color: #2b6cb0;
-    }
-    .status-box.success {
-      display: block;
-      background: #f0fff4;
-      color: #276749;
-      font-size: 22px;
-    }
-    .status-box.error {
-      display: block;
-      background: #fff5f5;
-      color: #c53030;
-    }
+    .status-box.running { display: block; background: #ebf8ff; color: #2b6cb0; }
+    .status-box.success { display: block; background: #f0fff4; color: #276749; font-size: 18px; }
+    .status-box.error   { display: block; background: #fff5f5; color: #c53030; }
 
-    /* スピナー */
     .spinner {
       display: inline-block;
-      width: 18px; height: 18px;
+      width: 16px; height: 16px;
       border: 3px solid #bee3f8;
       border-top-color: #3182ce;
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
       vertical-align: middle;
-      margin-right: 8px;
+      margin-right: 6px;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* 進行ステップ */
-    .steps {
-      margin-top: 12px;
-      font-size: 12px;
-      color: #4a90d9;
-      font-weight: normal;
-    }
-    .note { font-size: 12px; color: #a0aec0; margin-top: 16px; }
+    .steps { font-size: 12px; color: #4a90d9; font-weight: normal; margin-top: 4px; }
+    .note  { font-size: 12px; color: #a0aec0; margin-top: 12px; text-align: center; }
+
+    /* ローディング */
+    .loading-msg { text-align: center; color: #a0aec0; font-size: 14px; padding: 24px 0; }
   </style>
 </head>
 <body>
   <div class="card">
     <h1>Venrey スケジュール更新</h1>
-    <p class="subtitle">スプレッドシートから今週のシフトを自動入力します</p>
+    <p class="subtitle">更新する女の子にチェックを入れてください</p>
 
-    <button class="btn" id="runBtn" onclick="triggerUpdate()">
-      今週のスケジュールを更新する
+    <!-- 検索 + 全選択 -->
+    <div class="select-bar">
+      <input type="text" id="searchInput" placeholder="名前で検索..." oninput="filterStaff()">
+      <button class="btn-small" onclick="selectAll()">全選択</button>
+      <button class="btn-small" onclick="clearAll()">全解除</button>
+    </div>
+
+    <!-- スタッフリスト -->
+    <div id="staffArea">
+      <div class="loading-msg">シートを読み込み中...</div>
+    </div>
+
+    <!-- 選択カウンター -->
+    <div class="counter" id="counter" style="display:none">
+      <span id="selectedCount">0</span> 人を選択中
+    </div>
+
+    <!-- 実行ボタン -->
+    <button class="btn-run" id="runBtn" onclick="triggerUpdate()" disabled>
+      選択した女の子を更新する
     </button>
 
     <!-- 実行中 -->
@@ -118,153 +193,260 @@
     const OWNER    = "telarialtd-create";
     const REPO     = "venrey-automation";
     const WORKFLOW = "update_schedule.yml";
+    const SHEET_ID = "10siqLe6B9A7uvNWgRUdHb462RqxCxkGEGMEKTPhY-S8";
+    const SEPARATOR = "ふわもこSPA";
+    const STORE2_STOP = "たくま";
 
-    // トークンを localStorage に保存（初回のみ入力）
+    // GitHubトークン（初回のみ入力）
     let token = localStorage.getItem("gh_token");
     if (!token) {
       token = prompt("GitHubトークンを入力してください（初回のみ）:");
       if (token) localStorage.setItem("gh_token", token);
     }
-
-    // ワークフロー起動用ヘッダー（認証が必要）
     const authHeaders = {
       "Authorization": `Bearer ${token}`,
       "Accept": "application/vnd.github+json"
     };
-    // ステータス確認用ヘッダー（公開リポジトリなので認証不要）
     const readHeaders = { "Accept": "application/vnd.github+json" };
 
     let pollTimer = null;
-    let triggeredAt = null; // ボタンを押した時刻
+    let triggeredAt = null;
 
-    // ページ読み込み・キャッシュ復元時にステータスを必ずリセット
+    // ページ表示時にステータスリセット
     window.addEventListener("pageshow", function() {
-      hide("statusRunning");
-      hide("statusSuccess");
-      hide("statusError");
-      document.getElementById("runBtn").disabled = false;
+      hide("statusRunning"); hide("statusSuccess"); hide("statusError");
       document.getElementById("noteText").style.display = "";
       if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
       triggeredAt = null;
     });
 
+    // ── スタッフリスト読み込み ──
+    async function loadStaffList() {
+      const now = new Date();
+      const sheetName = `${now.getFullYear()}年${now.getMonth() + 1}月`;
+      const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
+
+      try {
+        const resp = await fetch(url);
+        const text = await resp.text();
+        const rows = parseCSV(text);
+
+        // A列（index 0）のみ抽出。Row 0-2はヘッダーなのでスキップ
+        const store1 = [], store2 = [];
+        let storeIdx = 0;
+
+        for (let i = 2; i < rows.length; i++) {
+          const name = (rows[i][0] || "").trim();
+          if (!name) continue;
+          if (name.includes(SEPARATOR)) { storeIdx = 1; continue; }
+          if (storeIdx === 1 && name.startsWith(STORE2_STOP)) break;
+          if (storeIdx === 0) store1.push(name);
+          else store2.push(name);
+        }
+
+        renderStaffList(store1, store2);
+      } catch (e) {
+        document.getElementById("staffArea").innerHTML =
+          `<div class="loading-msg" style="color:#c53030">読み込みエラー: ${e.message}</div>`;
+      }
+    }
+
+    function parseCSV(text) {
+      // シンプルなCSVパーサー（引用符対応）
+      const rows = [];
+      const lines = text.split(/\r?\n/);
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const cols = [];
+        let cur = "", inQ = false;
+        for (let i = 0; i < line.length; i++) {
+          const c = line[i];
+          if (c === '"') {
+            if (inQ && line[i+1] === '"') { cur += '"'; i++; }
+            else inQ = !inQ;
+          } else if (c === ',' && !inQ) {
+            cols.push(cur); cur = "";
+          } else {
+            cur += c;
+          }
+        }
+        cols.push(cur);
+        rows.push(cols);
+      }
+      return rows;
+    }
+
+    function renderStaffList(store1, store2) {
+      let html = "";
+
+      if (store1.length) {
+        html += `<div class="store-section">
+          <div class="store-label">CREA</div>
+          <div class="staff-list" id="list-store1">`;
+        for (const name of store1) {
+          html += staffItemHTML(name);
+        }
+        html += `</div></div>`;
+      }
+
+      if (store2.length) {
+        html += `<div class="store-section">
+          <div class="store-label">ふわもこSPA</div>
+          <div class="staff-list" id="list-store2">`;
+        for (const name of store2) {
+          html += staffItemHTML(name);
+        }
+        html += `</div></div>`;
+      }
+
+      document.getElementById("staffArea").innerHTML = html;
+      document.getElementById("counter").style.display = "";
+      document.getElementById("runBtn").disabled = false;
+      updateCounter();
+    }
+
+    function staffItemHTML(name) {
+      const id = "chk_" + name.replace(/\s/g, "_");
+      return `<label class="staff-item" for="${id}" onclick="">
+        <input type="checkbox" id="${id}" value="${name}" onchange="updateCounter()">
+        <span class="staff-name">${name}</span>
+      </label>`;
+    }
+
+    function updateCounter() {
+      const checked = document.querySelectorAll('.staff-item input[type="checkbox"]:checked');
+      document.getElementById("selectedCount").textContent = checked.length;
+      // チェック状態でスタイル更新
+      document.querySelectorAll('.staff-item').forEach(item => {
+        const cb = item.querySelector('input[type="checkbox"]');
+        item.classList.toggle('checked', cb && cb.checked);
+      });
+    }
+
+    function selectAll() {
+      document.querySelectorAll('.staff-item:not(.hidden-item) input[type="checkbox"]')
+        .forEach(cb => cb.checked = true);
+      updateCounter();
+    }
+
+    function clearAll() {
+      document.querySelectorAll('.staff-item input[type="checkbox"]')
+        .forEach(cb => cb.checked = false);
+      updateCounter();
+    }
+
+    function filterStaff() {
+      const q = document.getElementById("searchInput").value.trim().toLowerCase();
+      document.querySelectorAll('.staff-item').forEach(item => {
+        const name = item.querySelector('.staff-name').textContent.toLowerCase();
+        item.classList.toggle('hidden-item', q && !name.includes(q));
+      });
+    }
+
+    // ── 更新実行 ──
     async function triggerUpdate() {
+      const checked = [...document.querySelectorAll('.staff-item input[type="checkbox"]:checked')];
+      if (checked.length === 0) {
+        showError("更新する女の子を1人以上選択してください。");
+        return;
+      }
+      const selectedStaff = checked.map(cb => cb.value).join(",");
+
       if (!token) {
         showError("トークンが設定されていません。ページを再読み込みしてください。");
         return;
       }
 
-      // ボタンを無効化・表示リセット
       document.getElementById("runBtn").disabled = true;
-      hide("statusSuccess");
-      hide("statusError");
+      hide("statusSuccess"); hide("statusError");
       setStep("ジョブを開始しています...");
       show("statusRunning");
       document.getElementById("noteText").style.display = "none";
       triggeredAt = new Date();
 
       try {
-        // ワークフローをトリガー
         const res = await fetch(
           `https://api.github.com/repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW}/dispatches`,
-          { method: "POST", headers: authHeaders, body: JSON.stringify({ ref: "main" }) }
+          {
+            method: "POST",
+            headers: authHeaders,
+            body: JSON.stringify({
+              ref: "main",
+              inputs: { selected_staff: selectedStaff }
+            })
+          }
         );
         if (res.status !== 204) {
           const d = await res.json().catch(() => ({}));
           showError(`起動エラー (${res.status}): ${d.message || ""}`);
           return;
         }
-
-        // GitHub API への反映に時間がかかるため10秒待ってからポーリング開始
         setStep("実行準備中...");
         await sleep(10000);
         pollStatus();
-
       } catch (e) {
         showError("通信エラーが発生しました。インターネット接続を確認してください。");
       }
     }
 
     async function pollStatus() {
-      // タイムアウト: 10分経っても完了しなければエラー表示
       if (triggeredAt && (new Date() - triggeredAt) > 10 * 60 * 1000) {
         showError("タイムアウトしました。GitHubで確認してください。\nhttps://github.com/" + OWNER + "/" + REPO + "/actions");
         return;
       }
-
       try {
-        // 最新の workflow run を認証なしで取得（公開リポジトリ）
         const res = await fetch(
           `https://api.github.com/repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW}/runs?per_page=5`,
           { headers: readHeaders }
         );
         const data = await res.json();
+        const run = (data.workflow_runs || []).find(r =>
+          triggeredAt ? new Date(r.created_at) >= new Date(triggeredAt - 5000) : true
+        );
+        if (!run) { setStep("実行待機中..."); pollTimer = setTimeout(pollStatus, 5000); return; }
 
-        // ボタンを押した時刻より後（多少の時計ズレを考慮して5秒前まで許容）に
-        // 作成されたrunだけを対象にする。
-        // ※ フォールバックで古いrunを使わないことで誤検知を防ぐ
-        const run = (data.workflow_runs || []).find(r => {
-          return triggeredAt ? new Date(r.created_at) >= new Date(triggeredAt - 5000) : true;
-        });
-
-        if (!run) {
-          // まだ新しいrunがAPIに反映されていない → 待機して再試行
-          setStep("実行待機中...");
-          pollTimer = setTimeout(pollStatus, 5000);
-          return;
-        }
-
-        const status     = run.status;      // queued / in_progress / completed
-        const conclusion = run.conclusion;  // success / failure / null
-
-        if (status === "queued") {
+        if (run.status === "queued") {
           setStep("キュー待機中...");
           pollTimer = setTimeout(pollStatus, 5000);
-
-        } else if (status === "in_progress") {
+        } else if (run.status === "in_progress") {
           setStep("スケジュールを更新中...");
           pollTimer = setTimeout(pollStatus, 5000);
-
-        } else if (status === "completed") {
+        } else if (run.status === "completed") {
           hide("statusRunning");
           document.getElementById("noteText").style.display = "";
           document.getElementById("runBtn").disabled = false;
-
-          if (conclusion === "success") {
+          if (run.conclusion === "success") {
             showSuccess("✅ 更新終了！！\nVenreyのスケジュールが更新されました");
           } else {
-            showError(`更新に失敗しました（${conclusion}）\nGitHub Actions のログを確認してください。`);
+            showError(`更新に失敗しました（${run.conclusion}）\nGitHub Actions のログを確認してください。`);
           }
         } else {
           pollTimer = setTimeout(pollStatus, 5000);
         }
-
       } catch (e) {
         setStep("確認中...");
         pollTimer = setTimeout(pollStatus, 8000);
       }
     }
 
-    // ── ヘルパー関数 ──
     function showSuccess(msg) {
       const el = document.getElementById("statusSuccess");
-      el.style.display = "block";
-      el.innerText = msg;
+      el.style.display = "block"; el.innerText = msg;
     }
     function showError(msg) {
       hide("statusRunning");
       const el = document.getElementById("statusError");
-      el.style.display = "block";
-      el.innerText = msg;
+      el.style.display = "block"; el.innerText = msg;
       document.getElementById("runBtn").disabled = false;
       document.getElementById("noteText").style.display = "";
     }
-    function setStep(msg) {
-      document.getElementById("stepText").innerText = msg;
-    }
+    function setStep(msg) { document.getElementById("stepText").innerText = msg; }
     function show(id) { document.getElementById(id).style.display = "block"; }
     function hide(id) { document.getElementById(id).style.display = "none"; }
     function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    // 起動時にスタッフリストを読み込む
+    loadStaffList();
   </script>
 </body>
 </html>

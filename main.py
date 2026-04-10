@@ -151,10 +151,20 @@ def _get_access_token():
 
 
 def _normalize_name(raw):
-    """スタッフ名を _parse_staff_rows と同じルールで正規化する。"""
+    """スタッフ名を正規化する（シートの注釈を除去してVenrey表示名に合わせる）。
+    例: '川口 るか3/20K' → '川口るか'
+        '星野 るな(吉沢)' → '星野るな'
+        'たくま 1' → 'たくま'
+    """
     name = raw.strip().replace(" ", "").replace("\u3000", "")
-    name = re.sub(r'\d+$', '', name)
-    name = re.sub(r'[A-Za-z]+$', '', name)
+    # 括弧と内容を除去（例: 星野るな(吉沢) → 星野るな）
+    name = re.sub(r'[（(][^）)]*[）)]', '', name)
+    # 末尾の日付メモを除去（例: 3/20K, 1/15, 3/20 など）
+    name = re.sub(r'\d+/\d+[A-Za-z]*$', '', name)
+    # 末尾の数字・アルファベットを除去（複数回繰り返して完全除去）
+    for _ in range(3):
+        name = re.sub(r'\d+$', '', name)
+        name = re.sub(r'[A-Za-z]+$', '', name)
     return name
 
 
@@ -228,9 +238,7 @@ def _parse_staff_rows(df, date_map):
         if STORE_SEPARATOR in raw_name:
             store_idx = min(store_idx + 1, len(schedules) - 1)
             continue
-        name = raw_name.replace(" ", "").replace("\u3000", "")
-        name = re.sub(r'\d+$', '', name)
-        name = re.sub(r'[A-Za-z]+$', '', name)  # 末尾のアルファベットタグ（F, SBなど）を除去
+        name = _normalize_name(raw_name)
         if not name:
             continue
         # ふわもこSPA はSTORE2_STOP_AT の行の手前で読み込み停止
@@ -453,7 +461,24 @@ def search_and_activate_staff(page, staff_name):
                 return map;
             }
         """)
-        return filtered_map.get(staff_name)
+        # 1. 完全一致
+        if staff_name in filtered_map:
+            return filtered_map[staff_name]
+
+        # 2. 部分一致: Venrey名がシート名のprefixまたは逆（例: 川口るか ↔ 川口るか3/20）
+        for venrey_name, vid in filtered_map.items():
+            if staff_name.startswith(venrey_name) or venrey_name.startswith(staff_name):
+                print(f"    [部分一致] シート名:{staff_name} ↔ Venrey名:{venrey_name}")
+                return vid
+
+        # 3. 検索結果が1件のみなら候補として使用
+        if len(filtered_map) == 1:
+            venrey_name, vid = next(iter(filtered_map.items()))
+            print(f"    [1件マッチ] シート名:{staff_name} → Venrey名:{venrey_name}")
+            return vid
+
+        print(f"    [検索不一致] {staff_name}: 候補={list(filtered_map.keys())}")
+        return None
 
     except Exception as e:
         print(f"    [検索エラー] {staff_name}: {e}")

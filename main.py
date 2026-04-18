@@ -678,42 +678,62 @@ def main():
                 print(f"{label_store}: 今週の出勤データがありません。スキップします。")
                 continue
 
-            context = browser.new_context()
-            page = context.new_page()
-            page.set_viewport_size({"width": 1600, "height": 900})
+            # ── ログイン〜週間スケジュール表示（リトライ付き）──
+            MAX_LOGIN_RETRIES = 3
+            page = None
+            for login_attempt in range(1, MAX_LOGIN_RETRIES + 1):
+                if page:
+                    try:
+                        context.close()
+                    except Exception:
+                        pass
+                context = browser.new_context()
+                page = context.new_page()
+                page.set_viewport_size({"width": 1600, "height": 900})
 
-            # ログイン
-            print(f"{label_store} にログイン中...")
-            page.goto(LOGIN_URL)
-            page.wait_for_load_state("networkidle", timeout=20000)
+                try:
+                    # ログイン
+                    print(f"{label_store} にログイン中... (試行 {login_attempt}/{MAX_LOGIN_RETRIES})")
+                    page.goto(LOGIN_URL, timeout=30000)
+                    page.wait_for_load_state("networkidle", timeout=30000)
 
-            page.locator("input").first.fill(store["id"])
-            page.locator('input[type="password"]').fill(store["password"])
-            page.locator('button[type="submit"], button:has-text("ログイン")').first.click()
-            page.wait_for_load_state("networkidle", timeout=20000)
-            # Angular SPA のメニュー描画を待つ
-            page.wait_for_selector("text=週間スケジュール", state="visible", timeout=30000)
-            time.sleep(2)
-            print("ログイン完了")
+                    page.locator("input").first.fill(store["id"])
+                    page.locator('input[type="password"]').fill(store["password"])
+                    page.locator('button[type="submit"], button:has-text("ログイン")').first.click()
+                    page.wait_for_load_state("networkidle", timeout=30000)
+                    # Angular SPA のメニュー描画を待つ
+                    page.wait_for_selector("text=週間スケジュール", state="visible", timeout=60000)
+                    time.sleep(2)
+                    print("ログイン完了")
 
-            # 週間スケジュールへ移動
-            page.locator("text=週間スケジュール").first.click()
-            page.wait_for_load_state("networkidle", timeout=20000)
-            print("週間スケジュール画面を開きました")
+                    # 週間スケジュールへ移動
+                    page.locator("text=週間スケジュール").first.click()
+                    page.wait_for_load_state("networkidle", timeout=30000)
+                    # スケジュールセルが描画されるまで待つ
+                    page.wait_for_selector('.schBox[data-id]', state='visible', timeout=30000)
+                    print("週間スケジュール画面を開きました")
 
-            # 「今週」ボタンで現在の週に移動
-            try:
-                page.locator('button:has-text("今週"), a:has-text("今週")').first.click(timeout=3000)
-                page.wait_for_load_state("networkidle", timeout=10000)
-            except PlaywrightTimeout:
-                pass
+                    # 「今週」ボタンで現在の週に移動
+                    try:
+                        page.locator('button:has-text("今週"), a:has-text("今週")').first.click(timeout=5000)
+                        page.wait_for_load_state("networkidle", timeout=15000)
+                    except PlaywrightTimeout:
+                        pass
 
-            # Angular がスケジュールセルを完全に初期化するまで待つ
-            try:
-                page.wait_for_selector('.schBox[data-id]', state='visible', timeout=15000)
-            except PlaywrightTimeout:
-                pass
-            time.sleep(3)
+                    # Angular がスケジュールセルを完全に初期化するまで待つ
+                    try:
+                        page.wait_for_selector('.schBox[data-id]', state='visible', timeout=15000)
+                    except PlaywrightTimeout:
+                        pass
+                    time.sleep(3)
+                    break  # 成功 → ループ脱出
+
+                except PlaywrightTimeout as e:
+                    print(f"  タイムアウト (試行 {login_attempt}): {e}")
+                    if login_attempt == MAX_LOGIN_RETRIES:
+                        raise RuntimeError(f"{label_store}: ログイン〜スケジュール表示に{MAX_LOGIN_RETRIES}回失敗しました") from e
+                    print("  リトライします...")
+                    time.sleep(5)
 
             # ── 全スタッフを一括更新（今週・来週の2画面をカバー）──
             updated = 0

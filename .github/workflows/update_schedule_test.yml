@@ -1,9 +1,9 @@
 name: "[C-040] Venrey スケジュール更新（本番月次SS）"
 
-# 30分ごとに自動実行 + 手動トリガー
+# 5分ごとに自動実行 + 手動トリガー
 on:
   schedule:
-    - cron: '*/30 * * * *'  # 30分ごと（UTC基準だが30分間隔なので時差影響なし）
+    - cron: '*/5 * * * *'  # 5分ごと（GitHub Actions の最短間隔）
   workflow_dispatch:
     inputs:
       dry_run:
@@ -30,6 +30,11 @@ on:
         options:
           - 'true'
           - 'false'
+
+# 同時実行を防止（前回処理が終わる前に次回が走らないように）
+concurrency:
+  group: c-040-venrey-sync
+  cancel-in-progress: false
 
 jobs:
   update:

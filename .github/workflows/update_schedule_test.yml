@@ -16,6 +16,10 @@ on:
         description: '更新するスタッフ（カンマ区切り。空欄=全員）'
         required: false
         default: ''
+      sheet_id:
+        description: 'テストシートID（空欄=デフォルトの1IydMT3vlET...）'
+        required: false
+        default: ''
 
 jobs:
   update:
@@ -62,4 +66,5 @@ jobs:
           GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
           SELECTED_STAFF: ${{ github.event.inputs.selected_staff }}
           DRY_RUN: ${{ github.event.inputs.dry_run }}
+          BENRY_TEST_SHEET_ID: ${{ github.event.inputs.sheet_id }}
         run: python main_test.py

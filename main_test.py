@@ -24,14 +24,24 @@ import pandas as pd
 # ============================================================
 # テスト用シート固有の設定
 # ============================================================
-# テスト用スプレッドシート（タイトル: "2026年4月 シフト表 テスト用"）
-SPREADSHEET_ID = "1IydMT3vlET1hJBwpQJ1EZjx1wCrRsw2AxsV7Vxrn5dM"
+# テスト用スプレッドシート（環境変数 BENRY_TEST_SHEET_ID で上書き可能）
+DEFAULT_TEST_SHEET_ID = "1IydMT3vlET1hJBwpQJ1EZjx1wCrRsw2AxsV7Vxrn5dM"
+SPREADSHEET_ID = os.environ.get("BENRY_TEST_SHEET_ID") or DEFAULT_TEST_SHEET_ID
 
 # 店舗インデックス → タブ名（STORES[i] に対応）
 STORE_SHEETS = ["CREA", "ふわもこ"]
 
-# 集計行マーカー（先頭に現れたらスキップ）
-AGGREGATE_MARKERS = ("出勤人数", "当日欠勤", "事前欠勤", "店欠", "店都合")
+# 集計行マーカー（行頭または含まれたらスキップ）
+# 「📊出勤人数」「🏪店欠」「📅事前欠勤」のような絵文字付き集計行も含める
+AGGREGATE_MARKERS = (
+    "📊", "🏪", "📅",
+    "出勤人数", "合計",
+    "店欠", "前欠", "当欠", "事前欠勤", "当日欠勤", "店都合",
+)
+
+# 「受」末尾シフトの終了時刻に加算する分数（送迎・片付け込みの実退店時刻）
+# 例: 「19-24受」→ 終了 24:00 + 1:30 = 25:30
+UKE_OVERTIME_MIN = 90
 
 
 # ============================================================
@@ -98,21 +108,48 @@ def _normalize_name(raw):
 
 
 # ============================================================
-# シフトセル解析（新シート表記対応）
+# シフトセル解析（C-036フォーマット + 旧 *XXX 形式の両対応）
 # ============================================================
+def _parse_time_part(raw):
+    """「12」「1230」「12:30」を (hour, minute) に変換。失敗時 (None, None)。"""
+    raw = raw.strip().lstrip("*")
+    if not raw:
+        return None, None
+    if ":" in raw:
+        parts = raw.split(":", 1)
+        if not (parts[0].isdigit() and parts[1].isdigit()):
+            return None, None
+        return int(parts[0]), int(parts[1])
+    if not raw.isdigit():
+        return None, None
+    if len(raw) <= 2:
+        return int(raw), 0
+    return int(raw[:-2]), int(raw[-2:])
+
+
+def _add_minutes(eh, em, add_min):
+    em += add_min
+    while em >= 60:
+        em -= 60
+        eh += 1
+    return eh, em
+
+
 def parse_time_cell(cell_value):
     """
     テスト用シートのシフトセル値を (開始, 終了) にパースする。
 
     対応フォーマット:
-      "13:00〜22:50上"     → ("13:00", "22:50")
-      "18:00 〜 24:00 上"  → ("18:00", "24:00")
-      "12-15:30上"         → ("12:00", "15:30")
-      "19-23上"            → ("19:00", "23:00")
-      "21:30-27上"         → ("21:30", "27:00")
-      "19~3受"             → ("19:00", "27:00")  # 終了が開始より小 → +24h
-      "12-27受"            → ("12:00", "27:00")
-      "OFF" / "当欠" / "前欠" / "店欠" / "当欠店" → "休み"
+      「19-24受」          → ("19:00", "25:30")  ★受=終了+1:30★
+      「19-24上」          → ("19:00", "24:00")  上=そのまま
+      「19-24*130」        → ("19:00", "25:30")  旧形式 *XXX 互換
+      「19-3受」           → ("19:00", "28:30")  深夜跨ぎ + 受
+      「12-15:30上」       → ("12:00", "15:30")
+      「13:00〜22:50上」    → ("13:00", "22:50")
+      「18:00 〜 24:00 上」 → ("18:00", "24:00")
+      「21:30-27上」       → ("21:30", "27:00")  既に翌日表記
+      「OFF / 当欠 / 前欠 / 店欠」 → "休み"
+      ""                  → None
     """
     if cell_value is None:
         return None
@@ -126,37 +163,53 @@ def parse_time_cell(cell_value):
     if re.match(r'^(当欠|前欠|店欠)', s):
         return "休み"
 
-    # セパレータ・空白を統一
-    normalized = s.replace("〜", "-").replace("~", "-")
-    normalized = re.sub(r'\s+', '', normalized)
+    # 全角数字を半角に
+    s = s.translate(str.maketrans("０１２３４５６７８９", "0123456789"))
+    # 区切りを「-」に統一
+    s = s.replace("～", "-").replace("〜", "-").replace("~", "-").replace("ー", "-").replace("―", "-")
+    # 空白・全角空白を除去
+    s = re.sub(r'\s+', '', s).replace("　", "")
 
-    # 時刻ペア抽出: HH(:MM)?-HH(:MM)?
-    m = re.match(r'^(\d{1,2})(?::(\d{1,2}))?-(\d{1,2})(?::(\d{1,2}))?', normalized)
+    if not re.search(r"\d", s):
+        return None
+
+    # パターン1: START-END*OVERTIME（旧形式 *NNN は終了時刻を上書き）
+    # 例: 19-24*130 → eh=01:30 → +24 → 25:30
+    m = re.match(r'^(\d+(?::\d+)?)-(\d+(?::\d+)?)\*(\d{1,4})', s)
     if m:
-        sh = int(m.group(1))
-        sm = int(m.group(2)) if m.group(2) else 0
-        eh = int(m.group(3))
-        em = int(m.group(4)) if m.group(4) else 0
-
-        # 終了が開始より小さい → 翌日またぎ（19-3 → 19:00-27:00）
-        if eh < sh:
-            eh += 24
-
-        # 開始が 24 以上は 24 引く（Venrey は深夜帯 25:00 表記を許容）
+        sh, sm = _parse_time_part(m.group(1))
+        ot_raw = m.group(3).zfill(4) if len(m.group(3)) > 2 else m.group(3)
+        eh, em = _parse_time_part(ot_raw)
+        if sh is None or eh is None:
+            return None
         if sh >= 24:
             sh -= 24
+        if eh < 6:
+            eh += 24
+        return f"{sh:02d}:{sm:02d}", f"{eh:02d}:{em:02d}"
 
+    # パターン2: START-END[上/受](注記)
+    m = re.match(r'^([\d:]+)-([\d:]+)([上受])?', s)
+    if m:
+        sh, sm = _parse_time_part(m.group(1))
+        eh, em = _parse_time_part(m.group(2))
+        suffix = m.group(3) or ""
+        if sh is None or eh is None:
+            return None
+        if sh >= 24:
+            sh -= 24
+        # 深夜跨ぎ: 終了が開始より小さく、24未満なら +24
+        if eh < sh and eh < 24:
+            eh += 24
+        # 「受」末尾は終了時刻に+1:30（送迎・片付け込み）
+        if suffix == "受":
+            eh, em = _add_minutes(eh, em, UKE_OVERTIME_MIN)
         # 範囲チェック
         if not (0 <= sh < 24 and 0 <= sm < 60 and 0 <= em < 60):
             return None
-        if eh > 30:
+        if eh > 32:
             return None
-
         return f"{sh:02d}:{sm:02d}", f"{eh:02d}:{em:02d}"
-
-    # 数字を含まないセル（例: "確認中"）→ スキップ
-    if not re.search(r"\d", s):
-        return None
 
     # ハイフンなし数字のみ → 既存仕様を踏襲し「休み」扱い
     return "休み"

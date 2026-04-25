@@ -1,13 +1,15 @@
-name: "[C-040] Venrey スケジュール更新（テスト用シート）"
+name: "[C-040] Venrey スケジュール更新（本番月次SS）"
 
-# ★手動トリガー専用★ cron なし。既存 C-012 (update_schedule.yml) とは独立。
+# 30分ごとに自動実行 + 手動トリガー
 on:
+  schedule:
+    - cron: '*/30 * * * *'  # 30分ごと（UTC基準だが30分間隔なので時差影響なし）
   workflow_dispatch:
     inputs:
       dry_run:
         description: 'DRY_RUN（true=読み込み確認のみ・ベンリー更新しない / false=本番更新）'
         required: true
-        default: 'true'
+        default: 'false'
         type: choice
         options:
           - 'true'
@@ -17,14 +19,22 @@ on:
         required: false
         default: ''
       sheet_id:
-        description: 'テストシートID（空欄=デフォルトの1IydMT3vlET...）'
+        description: '月次SS ID（空欄=デフォルトの2026年4月SS）'
         required: false
         default: ''
+      skip_site_sync:
+        description: 'サイト配信スキップ（true=ベンリー反映のみ / false=サイト配信まで実行）'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
 
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 60
 
     steps:
       - name: コードを取得
@@ -59,12 +69,14 @@ jobs:
         if: steps.playwright-cache.outputs.cache-hit == 'true'
         run: playwright install-deps chromium
 
-      - name: テスト用シートからスケジュールを更新
+      - name: 月次SSからベンリー反映 → サイト配信
         env:
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
-          SELECTED_STAFF: ${{ github.event.inputs.selected_staff }}
-          DRY_RUN: ${{ github.event.inputs.dry_run }}
-          BENRY_TEST_SHEET_ID: ${{ github.event.inputs.sheet_id }}
+          # cron実行時は inputs が無いので空文字（main_test.py側で全員扱い）
+          SELECTED_STAFF: ${{ github.event.inputs.selected_staff || '' }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          BENRY_TEST_SHEET_ID: ${{ github.event.inputs.sheet_id || '' }}
+          SKIP_SITE_SYNC: ${{ github.event.inputs.skip_site_sync || 'false' }}
         run: python main_test.py

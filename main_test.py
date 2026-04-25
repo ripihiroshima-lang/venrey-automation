@@ -24,8 +24,12 @@ import pandas as pd
 # ============================================================
 # テスト用シート固有の設定
 # ============================================================
-# テスト用スプレッドシート（環境変数 BENRY_TEST_SHEET_ID で上書き可能）
-DEFAULT_TEST_SHEET_ID = "1IydMT3vlET1hJBwpQJ1EZjx1wCrRsw2AxsV7Vxrn5dM"
+# 本番月次SS（C-036連携先）。環境変数 BENRY_TEST_SHEET_ID で上書き可能。
+# 月別SS:
+#   2026年4月: 1y33e0FlbS2R9d-iMQqaSm29rtYtl1JIcR1PpERwG2W4
+#   2026年5月: 1XTmmkZP6k6PIhZ7RPHD75ClC_gfFA11U960wvCvEuB0
+#   2026年6月: 1yizaAM_aQFaepv0kYlKBZY7uDUDsJA_9rwSn7hrDqKQ
+DEFAULT_TEST_SHEET_ID = "1y33e0FlbS2R9d-iMQqaSm29rtYtl1JIcR1PpERwG2W4"
 SPREADSHEET_ID = os.environ.get("BENRY_TEST_SHEET_ID") or DEFAULT_TEST_SHEET_ID
 
 # 店舗インデックス → タブ名（STORES[i] に対応）
@@ -370,6 +374,45 @@ def main():
     main_module.parse_time_cell = parse_time_cell
     main_module._normalize_name = _normalize_name
     main_module.main()
+
+    # ベンリー反映後、サイトへ自動配信（SKIP_SITE_SYNC=1 で無効化）
+    if os.environ.get("SKIP_SITE_SYNC", "").lower() in ("1", "true", "yes"):
+        print("\nSKIP_SITE_SYNC 設定によりサイト配信をスキップします")
+        return
+
+    # 直前のベンリー反映を確実に保存させるため、少し待つ
+    import time as _time
+    print("\nサイトへの配信のため 30 秒待機（ベンリー側の保存完了を待つ）...")
+    _time.sleep(30)
+
+    # サイト配信は店舗ごと（CREA / ふわもこ）に実行する必要がある
+    import subprocess, sys as _sys
+    selected_raw = os.environ.get("SELECTED_STAFF", "").strip()
+    sync_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sync_to_sites.py")
+    if not os.path.exists(sync_script):
+        print(f"⚠ {sync_script} が見つかりません。サイト配信をスキップします")
+        return
+
+    # 各店舗のスタッフだけ抽出してサイト配信
+    schedules = load_schedule()
+    if selected_raw:
+        target_set = set(_normalize_name(n) for n in selected_raw.split(",") if n.strip())
+        schedules = [{k: v for k, v in s.items() if k in target_set} for s in schedules]
+
+    store_keys = ["crea", "fuwamoko"]
+    for i, sched in enumerate(schedules):
+        if not sched:
+            continue
+        store_key = store_keys[i]
+        names = ",".join(sorted(sched.keys()))
+        print(f"\n=== サイト配信開始: store={store_key}, staff={names} ===")
+        env = {**os.environ, "SELECTED_STAFF": names, "STORE": store_key, "HEADLESS": "true"}
+        try:
+            r = subprocess.run([_sys.executable, sync_script], env=env, timeout=600)
+            if r.returncode != 0:
+                print(f"⚠ サイト配信が異常終了 (exit={r.returncode})")
+        except Exception as e:
+            print(f"⚠ サイト配信エラー: {e}")
 
 
 if __name__ == "__main__":

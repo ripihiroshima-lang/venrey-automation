@@ -63,6 +63,14 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ runner.os }}-v1
 
+      - name: 差分検知用 state を復元
+        uses: actions/cache/restore@v4
+        with:
+          path: .state/last_state.json
+          key: c-040-state-${{ github.run_id }}
+          restore-keys: |
+            c-040-state-
+
       - name: ライブラリをインストール
         run: pip install playwright pandas requests
 
@@ -85,3 +93,10 @@ jobs:
           BENRY_TEST_SHEET_ID: ${{ github.event.inputs.sheet_id || '' }}
           SKIP_SITE_SYNC: ${{ github.event.inputs.skip_site_sync || 'false' }}
         run: python main_test.py
+
+      - name: 差分検知用 state を保存
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .state/last_state.json
+          key: c-040-state-${{ github.run_id }}-${{ github.run_attempt }}

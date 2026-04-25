@@ -17,7 +17,7 @@ import re
 import sys
 import urllib.parse
 import urllib.request
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 
 import pandas as pd
 
@@ -348,6 +348,80 @@ def load_schedule():
 
 
 # ============================================================
+# 差分検知: 前回反映時のスケジュールと比較して、変更されたスタッフのみ抽出
+# ============================================================
+STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".state", "last_state.json")
+
+
+def _serialize_schedules(schedules):
+    """シフトデータを JSON 保存可能な形式に変換。
+    日付は ISO形式 'YYYY-MM-DD' 文字列、シフトは 'HH:MM-HH:MM' or '休み' に正規化。"""
+    out = {}
+    for i, store_name in enumerate(STORE_SHEETS):
+        store_data = {}
+        for name, date_map in schedules[i].items():
+            shifts = {}
+            for d, val in date_map.items():
+                key = d.isoformat() if hasattr(d, "isoformat") else str(d)
+                if val == "休み":
+                    shifts[key] = "休み"
+                elif isinstance(val, (list, tuple)) and len(val) == 2:
+                    shifts[key] = f"{val[0]}-{val[1]}"
+                else:
+                    shifts[key] = str(val)
+            store_data[name] = shifts
+        out[store_name] = store_data
+    return {"stores": out, "version": 1}
+
+
+def _load_last_state():
+    if not os.path.exists(STATE_FILE):
+        return None
+    try:
+        with open(STATE_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"  state読込エラー: {e}")
+        return None
+
+
+def _save_state(state):
+    os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
+    with open(STATE_FILE, "w", encoding="utf-8") as f:
+        json.dump(state, f, ensure_ascii=False, indent=2)
+
+
+def detect_changed_staff(schedules):
+    """前回 state と比較して、今週分に変更があったスタッフ名のリストを返す。
+
+    Returns:
+        set of staff names (CREA + ふわもこ 統合)
+        前回 state がない場合は None（→ 全員対象として扱う）
+    """
+    today = datetime.now().date()
+    week_end = today + timedelta(days=6)
+    in_week = lambda iso: today.isoformat() <= iso <= week_end.isoformat()
+
+    current = _serialize_schedules(schedules)
+    last = _load_last_state()
+    if last is None:
+        print("  前回stateなし → 全員対象（初回 or cache miss）")
+        return None  # 全員対象
+
+    changed = set()
+    for store_name in STORE_SHEETS:
+        cur_store = current["stores"].get(store_name, {})
+        last_store = last.get("stores", {}).get(store_name, {})
+        all_names = set(cur_store.keys()) | set(last_store.keys())
+        for name in all_names:
+            cur_shifts = {k: v for k, v in cur_store.get(name, {}).items() if in_week(k)}
+            last_shifts = {k: v for k, v in last_store.get(name, {}).items() if in_week(k)}
+            if cur_shifts != last_shifts:
+                changed.add(name)
+    return changed
+
+
+# ============================================================
 # メイン: DRY_RUN の場合は読み込み結果だけ出力して終了
 # ============================================================
 def main():
@@ -367,6 +441,25 @@ def main():
         print("\n=== DRY_RUN 完了 ===")
         return
 
+    # 差分検知: SELECTED_STAFF が手動指定なら尊重、 未指定なら自動検知
+    selected_raw = os.environ.get("SELECTED_STAFF", "").strip()
+    schedules_for_diff = load_schedule()
+
+    if selected_raw:
+        print(f"\n手動指定スタッフ: {selected_raw}")
+    else:
+        changed = detect_changed_staff(schedules_for_diff)
+        if changed is None:
+            print("→ 全員対象で進行")
+        elif not changed:
+            print("→ 今週分の変更なし。スキップして終了")
+            return
+        else:
+            staff_list = sorted(changed)
+            print(f"→ 今週分の変更ありスタッフ: {staff_list}")
+            os.environ["SELECTED_STAFF"] = ",".join(staff_list)
+            selected_raw = os.environ["SELECTED_STAFF"]
+
     # 本番実行: Playwright を使うので main.py を遅延インポートして差し替え
     import main as main_module
     main_module.SPREADSHEET_ID = SPREADSHEET_ID
@@ -374,6 +467,13 @@ def main():
     main_module.parse_time_cell = parse_time_cell
     main_module._normalize_name = _normalize_name
     main_module.main()
+
+    # 反映が成功したら state を更新（次回の差分判定の基準にする）
+    try:
+        _save_state(_serialize_schedules(schedules_for_diff))
+        print(f"\n  state を保存: {STATE_FILE}")
+    except Exception as e:
+        print(f"  state 保存エラー: {e}")
 
     # ベンリー反映後、サイトへ自動配信（SKIP_SITE_SYNC=1 で無効化）
     if os.environ.get("SKIP_SITE_SYNC", "").lower() in ("1", "true", "yes"):

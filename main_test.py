@@ -17,20 +17,27 @@ import re
 import sys
 import urllib.parse
 import urllib.request
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 
 import pandas as pd
 
 # ============================================================
 # テスト用シート固有の設定
 # ============================================================
-# 本番月次SS（C-036連携先）。環境変数 BENRY_TEST_SHEET_ID で上書き可能。
-# 月別SS:
-#   2026年4月: 1y33e0FlbS2R9d-iMQqaSm29rtYtl1JIcR1PpERwG2W4
-#   2026年5月: 1XTmmkZP6k6PIhZ7RPHD75ClC_gfFA11U960wvCvEuB0
-#   2026年6月: 1yizaAM_aQFaepv0kYlKBZY7uDUDsJA_9rwSn7hrDqKQ
-DEFAULT_TEST_SHEET_ID = "1y33e0FlbS2R9d-iMQqaSm29rtYtl1JIcR1PpERwG2W4"
+# 本番月次SS（C-036連携先）。JST現在月から自動でSSを選択。
+# 新月分のSSが用意されたら下の MONTHLY_SHEETS に1行追加するだけで対応可能。
+# 緊急時は環境変数 BENRY_TEST_SHEET_ID で上書き可能（一時的な強制指定用）。
+MONTHLY_SHEETS = {
+    (2026, 4): "1y33e0FlbS2R9d-iMQqaSm29rtYtl1JIcR1PpERwG2W4",
+    (2026, 5): "1XTmmkZP6k6PIhZ7RPHD75ClC_gfFA11U960wvCvEuB0",
+    (2026, 6): "1yizaAM_aQFaepv0kYlKBZY7uDUDsJA_9rwSn7hrDqKQ",
+}
+JST = timezone(timedelta(hours=9))
+_now_jst = datetime.now(JST)
+_FALLBACK_SHEET_ID = "1y33e0FlbS2R9d-iMQqaSm29rtYtl1JIcR1PpERwG2W4"  # 未登録月のフォールバック
+DEFAULT_TEST_SHEET_ID = MONTHLY_SHEETS.get((_now_jst.year, _now_jst.month), _FALLBACK_SHEET_ID)
 SPREADSHEET_ID = os.environ.get("BENRY_TEST_SHEET_ID") or DEFAULT_TEST_SHEET_ID
+print(f"[INFO] {_now_jst.strftime('%Y-%m')} (JST) -> SHEET_ID={SPREADSHEET_ID}", flush=True)
 
 # 店舗インデックス → タブ名（STORES[i] に対応）
 STORE_SHEETS = ["CREA", "ふわもこ"]

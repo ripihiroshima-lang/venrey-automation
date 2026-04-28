@@ -28,9 +28,15 @@ import pandas as pd
 # 新月分のSSが用意されたら下の MONTHLY_SHEETS に1行追加するだけで対応可能。
 # 緊急時は環境変数 BENRY_TEST_SHEET_ID で上書き可能（一時的な強制指定用）。
 MONTHLY_SHEETS = {
-    (2026, 4): "1y33e0FlbS2R9d-iMQqaSm29rtYtl1JIcR1PpERwG2W4",
-    (2026, 5): "1XTmmkZP6k6PIhZ7RPHD75ClC_gfFA11U960wvCvEuB0",
-    (2026, 6): "1yizaAM_aQFaepv0kYlKBZY7uDUDsJA_9rwSn7hrDqKQ",
+    (2026,  4): "1y33e0FlbS2R9d-iMQqaSm29rtYtl1JIcR1PpERwG2W4",
+    (2026,  5): "1XTmmkZP6k6PIhZ7RPHD75ClC_gfFA11U960wvCvEuB0",
+    (2026,  6): "1yizaAM_aQFaepv0kYlKBZY7uDUDsJA_9rwSn7hrDqKQ",
+    (2026,  7): "1k4FVGkUkqR1HUaroC0bH-REaAy8pEM3uFjO3b202e9o",
+    (2026,  8): "1en-dlxUDLmSEmSPp2mCBgYDYfDfmfKCf7GlPFAN8GSg",
+    (2026,  9): "1UeVn4llROiPOnISZ86KN3hXp0f4_RCARL07iEflBDNI",
+    (2026, 10): "19FbRRmAhQONKhsTK3jeHLJV_WLTcpmiP1n64ykAXrOM",
+    (2026, 11): "1XalqXt1sfswmPasUY2jMtTXduA6VR7JE-ieBDFKX06I",
+    (2026, 12): "1tuTfLTt1D1yXp8e86IICYkf4iAo9yHlJpr1OVNfZcQY",
 }
 JST = timezone(timedelta(hours=9))
 _now_jst = datetime.now(JST)

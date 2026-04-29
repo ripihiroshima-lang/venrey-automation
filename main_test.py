@@ -416,6 +416,20 @@ def detect_changed_staff(schedules):
     in_week = lambda iso: today.isoformat() <= iso <= week_end.isoformat()
 
     current = _serialize_schedules(schedules)
+
+    # FORCE_REFRESH=true なら state cache を無視して、窓内にシフトを持つ全スタッフを対象に。
+    # 用途: 翌日6:00 JSTのキャッチアップ run（窓に新しく入った日(today+6)を確実に反映）
+    force = os.environ.get("FORCE_REFRESH", "").lower() in ("1", "true", "yes")
+    if force:
+        forced = set()
+        for store_name in STORE_SHEETS:
+            cur_store = current["stores"].get(store_name, {})
+            for name, shifts in cur_store.items():
+                if any(in_week(k) for k in shifts.keys()):
+                    forced.add(name)
+        print(f"  FORCE_REFRESH=true → state cache 無視、窓内シフト持ち {len(forced)}名 を対象")
+        return forced
+
     last = _load_last_state()
     if last is None:
         print("  前回stateなし → 全員対象（初回 or cache miss）")
@@ -453,6 +467,12 @@ def main():
                     print(f"  {name}  {d.strftime('%m/%d')}  {label}")
         print("\n=== DRY_RUN 完了 ===")
         return
+
+    # SELECTED_STAFF=__FORCE_REFRESH__ は force_refresh モードへの裏口（yml変更不要のため）
+    if os.environ.get("SELECTED_STAFF", "").strip() == "__FORCE_REFRESH__":
+        os.environ["FORCE_REFRESH"] = "true"
+        os.environ["SELECTED_STAFF"] = ""
+        print("[FORCE_REFRESH] selected_staff=__FORCE_REFRESH__ -> 強制再書込モードで起動")
 
     # 差分検知: SELECTED_STAFF が手動指定なら尊重、 未指定なら自動検知
     selected_raw = os.environ.get("SELECTED_STAFF", "").strip()

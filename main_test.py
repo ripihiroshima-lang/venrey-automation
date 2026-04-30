@@ -91,12 +91,18 @@ def _get_access_token():
         return json.load(r)["access_token"]
 
 
-def _fetch_sheet_df(sheet_name):
+def _fetch_sheet_df(sheet_name, sheet_id=None, access_token=None):
+    """指定SSの指定タブを DataFrame で取得。
+    sheet_id / access_token を省略すると SPREADSHEET_ID と新規取得トークンを使用 (後方互換)。
+    """
     try:
-        access_token = _get_access_token()
+        if access_token is None:
+            access_token = _get_access_token()
+        if sheet_id is None:
+            sheet_id = SPREADSHEET_ID
         encoded_range = urllib.parse.quote(sheet_name)
         url = (
-            f"https://sheets.googleapis.com/v4/spreadsheets/{SPREADSHEET_ID}"
+            f"https://sheets.googleapis.com/v4/spreadsheets/{sheet_id}"
             f"/values/{encoded_range}"
         )
         req = urllib.request.Request(url, headers={"Authorization": f"Bearer {access_token}"})
@@ -433,16 +439,26 @@ def _build_format_request(sheet_id, row_idx, col_idx, style):
     }
 
 
-def update_cell_colors_after_reflect():
-    """ベンリー反映成功後、SPREADSHEET_ID の窓内セル format を一括更新する。
-    エラーが出ても致命的でないため、上位で try/except して続行可能にすること。"""
-    today = datetime.now().date()
-    week_end = today + timedelta(days=6)
+def _months_in_window(today, week_end):
+    """窓 (today〜week_end) に含まれる年月の (year, month) リストを順序付きで返す。"""
+    months = []
+    cur = date(today.year, today.month, 1)
+    while cur <= week_end:
+        ym = (cur.year, cur.month)
+        if ym not in months and ym >= (today.year, today.month):
+            months.append(ym)
+        if cur.month == 12:
+            cur = date(cur.year + 1, 1, 1)
+        else:
+            cur = date(cur.year, cur.month + 1, 1)
+    return months
+
+
+def _color_one_spreadsheet(sheet_id_to_color, access_token, today, week_end):
+    """単一SSに対して窓内セル format を batchUpdate で一括更新。更新セル数を返す。"""
     in_window = lambda d: today <= d <= week_end
 
-    # SS メタ取得 (sheet_id 取得用)
-    access_token = _get_access_token()
-    meta_url = f"https://sheets.googleapis.com/v4/spreadsheets/{SPREADSHEET_ID}"
+    meta_url = f"https://sheets.googleapis.com/v4/spreadsheets/{sheet_id_to_color}"
     req = urllib.request.Request(meta_url, headers={"Authorization": f"Bearer {access_token}"})
     with urllib.request.urlopen(req) as r:
         meta = json.load(r)
@@ -456,7 +472,7 @@ def update_cell_colors_after_reflect():
         if store_name not in sheet_title_to_id:
             continue
         sheet_id = sheet_title_to_id[store_name]
-        df = _fetch_sheet_df(store_name)
+        df = _fetch_sheet_df(store_name, sheet_id=sheet_id_to_color, access_token=access_token)
         if df is None or df.shape[0] < 3:
             continue
 
@@ -492,18 +508,53 @@ def update_cell_colors_after_reflect():
                 requests_list.append(_build_format_request(sheet_id, row_idx, col_idx, style))
 
     if not requests_list:
-        print("[Color] 色付け対象なし")
-        return
+        print(f"[Color][{sheet_id_to_color[:10]}...] 色付け対象なし")
+        return 0
 
     body = json.dumps({'requests': requests_list}).encode()
-    url = f"https://sheets.googleapis.com/v4/spreadsheets/{SPREADSHEET_ID}:batchUpdate"
+    url = f"https://sheets.googleapis.com/v4/spreadsheets/{sheet_id_to_color}:batchUpdate"
     req = urllib.request.Request(url, data=body, method='POST', headers={
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json",
     })
     with urllib.request.urlopen(req) as r:
         json.load(r)
-    print(f"[Color] {len(requests_list)} セルの format を更新")
+    print(f"[Color][{sheet_id_to_color[:10]}...] {len(requests_list)} セルの format を更新")
+    return len(requests_list)
+
+
+def update_cell_colors_after_reflect():
+    """ベンリー反映成功後、窓 (today〜+6) に含まれる全月SSの窓内セル format を更新する。
+    エラーが出ても致命的でないため、上位で try/except して続行可能にすること。
+
+    v6.2: 窓が跨ぐ全月SSをループして色付け（多月対応）。
+    例) JST 4/30 → 窓=4/30〜5/6 → 4月SS と 5月SS の両方を色付け。
+    """
+    today = datetime.now().date()
+    week_end = today + timedelta(days=6)
+
+    months = _months_in_window(today, week_end)
+    target_sheet_ids = []
+    seen = set()
+    for ym in months:
+        sid = MONTHLY_SHEETS.get(ym)
+        if sid and sid not in seen:
+            target_sheet_ids.append((ym, sid))
+            seen.add(sid)
+
+    # フォールバック: MONTHLY_SHEETSに該当なし → 既存挙動 (SPREADSHEET_ID単一)
+    if not target_sheet_ids:
+        target_sheet_ids = [((today.year, today.month), SPREADSHEET_ID)]
+
+    access_token = _get_access_token()
+    total = 0
+    for ym, sid in target_sheet_ids:
+        try:
+            n = _color_one_spreadsheet(sid, access_token, today, week_end)
+            total += n
+        except Exception as e:
+            print(f"  色付けエラー ({ym[0]}-{ym[1]:02d}, {sid[:10]}...): {e}")
+    print(f"[Color] 合計 {total} セルを {len(target_sheet_ids)}個のSSで更新")
 
 
 # ============================================================

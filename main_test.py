@@ -361,6 +361,152 @@ def load_schedule():
 
 
 # ============================================================
+# C-040 v6.1: ベンリー反映成功後のセル色付け
+# ----------------------------------------------------------
+# 「色付き=ベンリー反映済」「白=未反映/窓外/空」の意味で統一する。
+# shift_reflect.js の SS書込時の色付けは v6.1 で廃止済み。
+# main_test.py がベンリー反映成功(main_module.main()完了後)に
+# 窓内 (today〜today+6) の全スタッフ・全日付セルの format を再計算する。
+# ============================================================
+
+# すいさん仕様 (2026-04-30) - 反映済セルの色マッピング
+_CELL_STYLES = {
+    'uke':      {'bg': '#C8E6C9', 'font': '#1B5E20', 'bold': True},   # 受 - 薄緑/濃緑
+    'up':       {'bg': '#BBDEFB', 'font': '#0D47A1', 'bold': True},   # 上 - 薄青/濃青
+    'akke':     {'bg': '#fecaca', 'font': '#991b1b', 'bold': True},   # 当欠
+    'zenke':    {'bg': '#fff1f2', 'font': '#be123c', 'bold': True},   # 前欠
+    'tenketsu': {'bg': '#fed7aa', 'font': '#9a3412', 'bold': True},   # 店欠 / 当欠店
+    'zenten':   {'bg': '#fef9c3', 'font': '#854d0e', 'bold': True},   # 前欠店
+    'off':      {'bg': '#f1f5f9', 'font': '#94a3b8', 'bold': False},  # OFF
+    'white':    {'bg': '#ffffff', 'font': '#000000', 'bold': True},   # 未反映/空
+}
+
+
+def _hex_to_rgb01(hex_color):
+    h = hex_color.replace('#', '')
+    return {
+        'red':   int(h[0:2], 16) / 255.0,
+        'green': int(h[2:4], 16) / 255.0,
+        'blue':  int(h[4:6], 16) / 255.0,
+    }
+
+
+def _get_cell_style(value):
+    v = str(value or '').strip()
+    if not v or v == 'nan':
+        return _CELL_STYLES['white']
+    up = v.upper()
+    if v == '当欠':                  return _CELL_STYLES['akke']
+    if v == '前欠':                  return _CELL_STYLES['zenke']
+    if v == '店欠' or v == '当欠店': return _CELL_STYLES['tenketsu']
+    if v == '前欠店':                return _CELL_STYLES['zenten']
+    if up == 'OFF':                  return _CELL_STYLES['off']
+    if v.endswith('上'):             return _CELL_STYLES['up']
+    if v.endswith('受'):             return _CELL_STYLES['uke']
+    return _CELL_STYLES['white']
+
+
+def _build_format_request(sheet_id, row_idx, col_idx, style):
+    """1セル分の repeatCell リクエスト構築 (row/col_idx は 0-based)。"""
+    return {
+        'repeatCell': {
+            'range': {
+                'sheetId': sheet_id,
+                'startRowIndex': row_idx,
+                'endRowIndex': row_idx + 1,
+                'startColumnIndex': col_idx,
+                'endColumnIndex': col_idx + 1,
+            },
+            'cell': {
+                'userEnteredFormat': {
+                    'backgroundColor': _hex_to_rgb01(style['bg']),
+                    'textFormat': {
+                        'foregroundColor': _hex_to_rgb01(style['font']),
+                        'bold': bool(style['bold']),
+                    },
+                    'horizontalAlignment': 'CENTER',
+                    'verticalAlignment': 'MIDDLE',
+                },
+            },
+            'fields': 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment)',
+        }
+    }
+
+
+def update_cell_colors_after_reflect():
+    """ベンリー反映成功後、SPREADSHEET_ID の窓内セル format を一括更新する。
+    エラーが出ても致命的でないため、上位で try/except して続行可能にすること。"""
+    today = datetime.now().date()
+    week_end = today + timedelta(days=6)
+    in_window = lambda d: today <= d <= week_end
+
+    # SS メタ取得 (sheet_id 取得用)
+    access_token = _get_access_token()
+    meta_url = f"https://sheets.googleapis.com/v4/spreadsheets/{SPREADSHEET_ID}"
+    req = urllib.request.Request(meta_url, headers={"Authorization": f"Bearer {access_token}"})
+    with urllib.request.urlopen(req) as r:
+        meta = json.load(r)
+    sheet_title_to_id = {
+        s['properties']['title']: s['properties']['sheetId']
+        for s in meta.get('sheets', [])
+    }
+
+    requests_list = []
+    for store_name in STORE_SHEETS:
+        if store_name not in sheet_title_to_id:
+            continue
+        sheet_id = sheet_title_to_id[store_name]
+        df = _fetch_sheet_df(store_name)
+        if df is None or df.shape[0] < 3:
+            continue
+
+        # タイトルから年月検出 (load_schedule と同じロジック)
+        title_cell = str(df.iloc[0, 0]) if df.shape[0] > 0 and df.shape[1] > 0 else ""
+        m = re.search(r'(\d{4})年(\d{1,2})月', title_cell)
+        if m:
+            base_year, base_month = int(m.group(1)), int(m.group(2))
+        else:
+            base_year, base_month = today.year, today.month
+
+        date_map = _build_date_map(df, base_year, base_month, header_row_idx=1, date_start_col=1)
+        if not date_map:
+            continue
+
+        window_cols = [(col_idx, d) for col_idx, d in date_map.items() if in_window(d)]
+        if not window_cols:
+            continue
+
+        for row_idx in range(2, df.shape[0]):
+            raw_name = str(df.iloc[row_idx, 0]).strip()
+            if not raw_name or raw_name == "nan":
+                continue
+            if any(marker in raw_name for marker in AGGREGATE_MARKERS):
+                continue
+            if not re.search(r'[\w぀-ヿ一-鿿]', raw_name):
+                continue
+            for col_idx, _d in window_cols:
+                if col_idx >= df.shape[1]:
+                    continue
+                value = str(df.iloc[row_idx, col_idx]).strip()
+                style = _get_cell_style(value)
+                requests_list.append(_build_format_request(sheet_id, row_idx, col_idx, style))
+
+    if not requests_list:
+        print("[Color] 色付け対象なし")
+        return
+
+    body = json.dumps({'requests': requests_list}).encode()
+    url = f"https://sheets.googleapis.com/v4/spreadsheets/{SPREADSHEET_ID}:batchUpdate"
+    req = urllib.request.Request(url, data=body, method='POST', headers={
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+    })
+    with urllib.request.urlopen(req) as r:
+        json.load(r)
+    print(f"[Color] {len(requests_list)} セルの format を更新")
+
+
+# ============================================================
 # 差分検知: 前回反映時のスケジュールと比較して、変更されたスタッフのみ抽出
 # ============================================================
 STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".state", "last_state.json")
@@ -416,20 +562,6 @@ def detect_changed_staff(schedules):
     in_week = lambda iso: today.isoformat() <= iso <= week_end.isoformat()
 
     current = _serialize_schedules(schedules)
-
-    # FORCE_REFRESH=true なら state cache を無視して、窓内にシフトを持つ全スタッフを対象に。
-    # 用途: 翌日6:00 JSTのキャッチアップ run（窓に新しく入った日(today+6)を確実に反映）
-    force = os.environ.get("FORCE_REFRESH", "").lower() in ("1", "true", "yes")
-    if force:
-        forced = set()
-        for store_name in STORE_SHEETS:
-            cur_store = current["stores"].get(store_name, {})
-            for name, shifts in cur_store.items():
-                if any(in_week(k) for k in shifts.keys()):
-                    forced.add(name)
-        print(f"  FORCE_REFRESH=true → state cache 無視、窓内シフト持ち {len(forced)}名 を対象")
-        return forced
-
     last = _load_last_state()
     if last is None:
         print("  前回stateなし → 全員対象（初回 or cache miss）")
@@ -468,12 +600,6 @@ def main():
         print("\n=== DRY_RUN 完了 ===")
         return
 
-    # SELECTED_STAFF=__FORCE_REFRESH__ は force_refresh モードへの裏口（yml変更不要のため）
-    if os.environ.get("SELECTED_STAFF", "").strip() == "__FORCE_REFRESH__":
-        os.environ["FORCE_REFRESH"] = "true"
-        os.environ["SELECTED_STAFF"] = ""
-        print("[FORCE_REFRESH] selected_staff=__FORCE_REFRESH__ -> 強制再書込モードで起動")
-
     # 差分検知: SELECTED_STAFF が手動指定なら尊重、 未指定なら自動検知
     selected_raw = os.environ.get("SELECTED_STAFF", "").strip()
     schedules_for_diff = load_schedule()
@@ -500,6 +626,12 @@ def main():
     main_module.parse_time_cell = parse_time_cell
     main_module._normalize_name = _normalize_name
     main_module.main()
+
+    # ★ C-040 v6.1: ベンリー反映成功後、SS の窓内セルを色付け更新
+    try:
+        update_cell_colors_after_reflect()
+    except Exception as e:
+        print(f"  色付けエラー (致命的でないので続行): {e}")
 
     # 反映が成功したら state を更新（次回の差分判定の基準にする）
     try:
